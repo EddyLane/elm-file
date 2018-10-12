@@ -1,4 +1,4 @@
-port module File.Upload
+port module Upload
     exposing
         ( Config
         , State
@@ -84,8 +84,8 @@ When you need to create an uploader you first need to init the state:
 -}
 
 import Drag
-import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
-import File.Data.UploadId as UploadId exposing (UploadId)
+import Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
+import Data.UploadId as UploadId exposing (UploadId)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onWithOptions)

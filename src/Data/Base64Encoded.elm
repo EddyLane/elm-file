@@ -1,4 +1,4 @@
-module File.Data.Base64Encoded exposing (Base64Encoded, decoder, encoder, toString)
+module Data.Base64Encoded exposing (Base64Encoded, decoder, encoder, toString)
 
 {-| Opaque wrapper for Base64 encoded data
 
