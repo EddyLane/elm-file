@@ -1,7 +1,7 @@
 {
     "version": "1.0.0",
-    "summary": "helpful summary of your project, less than 80 characters",
-    "repository": "https://github.com/user/project.git",
+    "summary": "Elm file is a library designed to allow for an easy way to upload files using Elm and ports, in addition to the core uploading functionality it includes modules that can be used to streamline the process.",
+    "repository": "https://github.com/EddyLane/elm-file",
     "license": "BSD3",
     "source-directories": [
         "src"
