@@ -1,4 +1,4 @@
-module FileList
+module File.FileList
     exposing
         ( Config
         , Sort(..)

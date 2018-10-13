@@ -1,4 +1,4 @@
-module Data.UploadId
+module File.Data.UploadId
     exposing
         ( Collection
         , UploadId

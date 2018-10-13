@@ -1,12 +1,14 @@
 {
     "version": "1.0.0",
-    "summary": "Elm file is a library designed to allow for an easy way to upload files using Elm and ports, in addition to the core uploading functionality it includes modules that can be used to streamline the process.",
+    "summary": "Elm File is a library to assist with uploading and downloading files",
     "repository": "https://github.com/EddyLane/elm-file",
     "license": "BSD3",
     "source-directories": [
         "src"
     ],
-    "exposed-modules": [],
+    "exposed-modules": [
+        ""
+    ],
     "dependencies": {
         "NoRedInk/elm-decode-pipeline": "3.0.1 <= v < 4.0.0",
         "elm-lang/core": "5.0.0 <= v < 6.0.0",

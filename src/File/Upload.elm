@@ -1,4 +1,4 @@
-port module Upload
+port module File.Upload
     exposing
         ( Config
         , State

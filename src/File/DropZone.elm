@@ -1,4 +1,4 @@
-port module DropZone
+port module File.DropZone
     exposing
         ( Config
         , State
