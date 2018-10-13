@@ -44,13 +44,13 @@ in this module.
 
 -}
 
-import Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
-import Data.UploadId as UploadId exposing (Collection, UploadId)
+import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
+import File.Data.UploadId as UploadId exposing (Collection, UploadId)
+import File.Upload as Upload exposing (UploadingFile)
 import Html exposing (..)
 import Html.Attributes as Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Set exposing (Set)
-import Upload as Upload exposing (UploadingFile)
 
 
 type UploadState file

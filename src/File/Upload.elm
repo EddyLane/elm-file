@@ -79,9 +79,9 @@ When you need to create an uploader you first need to init the state:
 
 -}
 
-import Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
-import Data.UploadId as UploadId exposing (UploadId)
 import Drag
+import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
+import File.Data.UploadId as UploadId exposing (UploadId)
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
