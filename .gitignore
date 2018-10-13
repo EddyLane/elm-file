@@ -1,3 +1,6 @@
+# Elm Docs artifacts
+.doit.db
+
 # Distribution
 build/
 

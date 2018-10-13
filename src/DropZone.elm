@@ -17,6 +17,22 @@ port module DropZone
 
 {-| This library provides a UI element that acts as a "DropZone"; a place where users can drop files on to upload them
 to a server.
+
+
+# State
+
+@docs State, init, isActive, view
+
+
+# Config
+
+@docs Config, config, configAttrs, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
+
+
+# Other
+
+@docs openFileBrowser
+
 -}
 
 import Drag
@@ -38,6 +54,8 @@ port openFileBrowser : String -> Cmd msg
 ---- STATE ----
 
 
+{-| Opaque type holding the state of the DropZone component
+-}
 type State
     = State StateRec
 
@@ -46,6 +64,26 @@ type alias StateRec =
     { dropActive : Bool }
 
 
+{-| init the DropZone component
+-}
+init : State
+init =
+    State { dropActive = False }
+
+
+{-| Bool depending on if the component is being hovered over
+-}
+isActive : State -> Bool
+isActive (State { dropActive }) =
+    dropActive
+
+
+
+---- CONFIG ----
+
+
+{-| Opaque type holding the configuration of the DropZone component
+-}
 type Config msg
     = Config (ConfigRec msg)
 
@@ -60,15 +98,6 @@ type alias ConfigRec msg =
     }
 
 
-init : State
-init =
-    State { dropActive = False }
-
-
-
----- CONFIG ----
-
-
 {-| Init the configuration of this uploader with a no-op msg
 -}
 config : msg -> Config msg
@@ -81,6 +110,15 @@ config noOpMsg =
         , viewFn = always (always [])
         , attrsFn = always []
         }
+
+
+{-| Configure a msg that will update the state of this component. Often you will be forced to fill in the blanks when
+you use this library, but sometimes we'll do the leg work for you.
+-}
+configSetState : (State -> msg) -> Config msg -> Config msg
+configSetState msg (Config configRec) =
+    Config <|
+        { configRec | setStateMsg = msg }
 
 
 {-| Set what happens when files are added to the upload queue
@@ -99,12 +137,6 @@ configInputId inputId (Config configRec) =
         { configRec | inputId = inputId }
 
 
-configSetState : (State -> msg) -> Config msg -> Config msg
-configSetState msg (Config configRec) =
-    Config <|
-        { configRec | setStateMsg = msg }
-
-
 {-| Set what happens when manually triggering the uploader (i.e. from an anchor tag)
 -}
 configBrowseFiles : (String -> msg) -> Config msg -> Config msg
@@ -113,12 +145,17 @@ configBrowseFiles msg (Config configRec) =
         { configRec | browseClickMsg = msg }
 
 
+{-| Configure how to display the contents of the DropZone. Takes a function which takes the state of the dropzone, and
+an event to open a file browser to upload more files
+-}
 configContents : (State -> msg -> List (Html msg)) -> Config msg -> Config msg
 configContents viewFn (Config configRec) =
     Config <|
         { configRec | viewFn = viewFn }
 
 
+{-| Configure the attrs to add to the component
+-}
 configAttrs : (State -> List (Attribute msg)) -> Config msg -> Config msg
 configAttrs attrsFn (Config configRec) =
     Config <|
@@ -129,11 +166,8 @@ configAttrs attrsFn (Config configRec) =
 ---- VIEW ----
 
 
-isActive : State -> Bool
-isActive (State { dropActive }) =
-    dropActive
-
-
+{-| Display the component
+-}
 view : State -> Config msg -> Html msg
 view (State state) (Config config) =
     div (config.attrsFn (State state))
