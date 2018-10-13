@@ -7,7 +7,11 @@
         "src"
     ],
     "exposed-modules": [
-        ""
+        "File.Upload",
+        "File.FileList",
+        "File.DropZone",
+        "File.Data.Base64Encoded",
+        "File.Data.UploadId"
     ],
     "dependencies": {
         "NoRedInk/elm-decode-pipeline": "3.0.1 <= v < 4.0.0",
