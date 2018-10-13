@@ -1,7 +1,7 @@
 {
     "version": "1.0.0",
     "summary": "Elm File is a library to assist with uploading and downloading files",
-    "repository": "https://github.com/EddyLane/elm-file",
+    "repository": "https://github.com/EddyLane/elm-file.git",
     "license": "BSD3",
     "source-directories": [
         "src"
