@@ -83,12 +83,9 @@ When you need to create an uploader you first need to init the state:
 
 -}
 
-import Drag
 import Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
 import Data.UploadId as UploadId exposing (UploadId)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput, onWithOptions)
+import Drag
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode

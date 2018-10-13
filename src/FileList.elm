@@ -4,24 +4,23 @@ module FileList
         , Sort(..)
         , SortDirection(..)
         , State
-        , cancelUploadMsg
-        , column
-        , columns
         , config
-        , contentTypeFn
-        , defaultSort
-        , defaultSortDirection
-        , failedRowAttrs
-        , fileIcon
-        , idFn
+        , configCancelUploadMsg
+        , configColumn
+        , configContentTypeFn
+        , configDisableRow
+        , configFileIcon
+        , configIdFn
+        , configInitialSort
+        , configInitialSortDirection
+        , configListStateMsg
+        , configMultiSelectEnabled
+        , configNameFn
+        , configRowActions
+        , configRowAttrs
+        , configThumbnailSrcFn
+        , configUploadedRowAttrs
         , init
-        , multiSelectEnabled
-        , nameFn
-        , rowActions
-        , rowDisabled
-        , setListStateMsg
-        , thumbnailSrcFn
-        , uploadedRowAttrs
         , view
         )
 
@@ -30,11 +29,11 @@ module FileList
 
 import Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
 import Data.UploadId as UploadId exposing (Collection, UploadId)
-import Upload as Upload exposing (UploadingFile)
 import Html exposing (..)
 import Html.Attributes as Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Set exposing (Set)
+import Upload as Upload exposing (UploadingFile)
 
 
 type UploadState file
@@ -108,18 +107,6 @@ init (Config { defaultCustomSort, defaultSortDir }) =
         }
 
 
-defaultSort : Sort colId -> Config colId file msg -> Config colId file msg
-defaultSort sort (Config configRec) =
-    Config <|
-        { configRec | defaultCustomSort = Just sort }
-
-
-defaultSortDirection : SortDirection -> Config colId file msg -> Config colId file msg
-defaultSortDirection sortDir (Config configRec) =
-    Config <|
-        { configRec | defaultSortDir = sortDir }
-
-
 
 ---- CONFIG ----
 
@@ -145,94 +132,94 @@ config noOpMsg =
         }
 
 
-fileIcon : (String -> Html msg) -> Config colId file msg -> Config colId file msg
-fileIcon fileIcon (Config configRec) =
+configInitialSort : Sort colId -> Config colId file msg -> Config colId file msg
+configInitialSort sort (Config configRec) =
+    Config <|
+        { configRec | defaultCustomSort = Just sort }
+
+
+configInitialSortDirection : SortDirection -> Config colId file msg -> Config colId file msg
+configInitialSortDirection sortDir (Config configRec) =
+    Config <|
+        { configRec | defaultSortDir = sortDir }
+
+
+configFileIcon : (String -> Html msg) -> Config colId file msg -> Config colId file msg
+configFileIcon fileIcon (Config configRec) =
     Config <|
         { configRec | fileIcon = fileIcon }
 
 
-rowDisabled : (file -> Bool) -> Config colId file msg -> Config colId file msg
-rowDisabled disabled (Config configRec) =
+configDisableRow : (file -> Bool) -> Config colId file msg -> Config colId file msg
+configDisableRow disabled (Config configRec) =
     Config <|
         { configRec | disabled = disabled }
 
 
-uploadedRowAttrs : (file -> List (Attribute msg)) -> Config colId file msg -> Config colId file msg
-uploadedRowAttrs uploadedRowAttrs (Config configRec) =
+configUploadedRowAttrs : (file -> List (Attribute msg)) -> Config colId file msg -> Config colId file msg
+configUploadedRowAttrs uploadedRowAttrs (Config configRec) =
     Config <|
         { configRec | uploadedRowAttrs = uploadedRowAttrs }
 
 
-failedRowAttrs : (UploadingFile -> List (Attribute msg)) -> Config colId file msg -> Config colId file msg
-failedRowAttrs failedRowAttrs (Config configRec) =
+configRowAttrs : (UploadingFile -> List (Attribute msg)) -> Config colId file msg -> Config colId file msg
+configRowAttrs failedRowAttrs (Config configRec) =
     Config <|
         { configRec | failedRowAttrs = failedRowAttrs }
 
 
-rowActions : (file -> Maybe (Html msg)) -> Config colId file msg -> Config colId file msg
-rowActions rowActions (Config configRec) =
+configRowActions : (file -> Maybe (Html msg)) -> Config colId file msg -> Config colId file msg
+configRowActions rowActions (Config configRec) =
     Config <|
         { configRec | rowActions = rowActions }
 
 
-setListStateMsg : (State colId -> msg) -> Config colId file msg -> Config colId file msg
-setListStateMsg msg (Config configRec) =
+configListStateMsg : (State colId -> msg) -> Config colId file msg -> Config colId file msg
+configListStateMsg msg (Config configRec) =
     Config <|
         { configRec | setListStateMsg = msg }
 
 
-defaultDirection : (State colId -> msg) -> Config colId file msg -> Config colId file msg
-defaultDirection msg (Config configRec) =
+configIdFn : (file -> String) -> Config colId file msg -> Config colId file msg
+configIdFn idFn (Config configRec) =
     Config <|
-        { configRec | setListStateMsg = msg }
+        { configRec | idFn = idFn }
 
 
-idFn : (file -> String) -> Config colId file msg -> Config colId file msg
-idFn fn (Config configRec) =
+configNameFn : (file -> String) -> Config colId file msg -> Config colId file msg
+configNameFn nameFn (Config configRec) =
     Config <|
-        { configRec | idFn = fn }
+        { configRec | nameFn = nameFn }
 
 
-nameFn : (file -> String) -> Config colId file msg -> Config colId file msg
-nameFn fn (Config configRec) =
+configContentTypeFn : (file -> String) -> Config colId file msg -> Config colId file msg
+configContentTypeFn contentTypeFn (Config configRec) =
     Config <|
-        { configRec | nameFn = fn }
+        { configRec | contentTypeFn = contentTypeFn }
 
 
-contentTypeFn : (file -> String) -> Config colId file msg -> Config colId file msg
-contentTypeFn fn (Config configRec) =
+configThumbnailSrcFn : (file -> String) -> Config colId file msg -> Config colId file msg
+configThumbnailSrcFn thumbnailSrcFn (Config configRec) =
     Config <|
-        { configRec | contentTypeFn = fn }
+        { configRec | thumbnailSrcFn = thumbnailSrcFn }
 
 
-thumbnailSrcFn : (file -> String) -> Config colId file msg -> Config colId file msg
-thumbnailSrcFn fn (Config configRec) =
+configCancelUploadMsg : (UploadId -> msg) -> Config colId file msg -> Config colId file msg
+configCancelUploadMsg cancelUploadMsg (Config configRec) =
     Config <|
-        { configRec | thumbnailSrcFn = fn }
+        { configRec | cancelUploadMsg = cancelUploadMsg }
 
 
-cancelUploadMsg : (UploadId -> msg) -> Config colId file msg -> Config colId file msg
-cancelUploadMsg msg (Config configRec) =
-    Config <|
-        { configRec | cancelUploadMsg = msg }
-
-
-columns : List (Column colId file msg) -> Config colId file msg -> Config colId file msg
-columns columns (Config configRec) =
-    Config <|
-        { configRec | columns = columns }
-
-
-column : Column colId file msg -> Config colId file msg -> Config colId file msg
-column col (Config configRec) =
+configColumn : Column colId file msg -> Config colId file msg -> Config colId file msg
+configColumn col (Config configRec) =
     Config <|
         { configRec | columns = List.append configRec.columns [ col ] }
 
 
-multiSelectEnabled : Bool -> Config colId file msg -> Config colId file msg
-multiSelectEnabled enabled (Config configRec) =
+configMultiSelectEnabled : Bool -> Config colId file msg -> Config colId file msg
+configMultiSelectEnabled multiSelectEnabled (Config configRec) =
     Config <|
-        { configRec | multiSelectEnabled = enabled }
+        { configRec | multiSelectEnabled = multiSelectEnabled }
 
 
 
