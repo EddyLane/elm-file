@@ -1,18 +1,7 @@
-module File.DropZone
-    exposing
-        ( Config
-        , State
-        , config
-        , configAttrs
-        , configBrowseFiles
-        , configContents
-        , configInputId
-        , configSetState
-        , configUploadFiles
-        , init
-        , isActive
-        , view
-        )
+module File.DropZone exposing
+    ( State, init, isActive, view
+    , Config, config, configAttrs, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
+    )
 
 {-| This library provides a UI element that acts as a "DropZone"; a place where users can drop files on to upload them
 to a server.
@@ -34,6 +23,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (custom, onClick)
 import Html.Events.Extra.Drag as Drag
 import Json.Decode as Decode
+
 
 
 ---- STATE ----
@@ -176,7 +166,7 @@ dropZone state configRec =
                 { dropEffect = Drag.CopyOnDrop
                 , onEnter = Just <| always <| setDragging True
                 , onLeave = Just <| always <| setDragging False
-                , onDrop = (.dataTransfer >> .files >> configRec.uploadFilesMsg)
+                , onDrop = .dataTransfer >> .files >> configRec.uploadFilesMsg
                 , onOver = always (always configRec.noOpMsg)
                 }
             ]
@@ -191,13 +181,13 @@ fileInput { inputId, uploadFilesMsg, noOpMsg } =
         , attribute "multiple" ""
         , type_ "file"
         , id inputId
-        , Html.Events.custom "change" (Decode.succeed { message = noOpMsg, stopPropagation = False, preventDefault = False })
+        , Html.Events.on "change" (fileInputDecoder uploadFilesMsg)
         ]
         []
 
 
-fileInputDecoder : String -> (List Drag.File -> msg) -> Decode.Decoder msg
-fileInputDecoder inputId msg =
+fileInputDecoder : (List Drag.File -> msg) -> Decode.Decoder msg
+fileInputDecoder msg =
     Drag.fileDecoder
         |> Drag.fileListDecoder
         |> Decode.at [ "target", "files" ]

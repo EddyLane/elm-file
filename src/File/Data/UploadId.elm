@@ -1,16 +1,4 @@
-module File.Data.UploadId
-    exposing
-        ( Collection
-        , UploadId
-        , decoder
-        , encoder
-        , get
-        , init
-        , insert
-        , remove
-        , toList
-        , update
-        )
+module File.Data.UploadId exposing (Collection, UploadId, decoder, encoder, get, init, insert, remove, toList, update)
 
 {-| Opaque wrapper for upload ids.
 
@@ -24,6 +12,7 @@ is inserted.
 import Dict exposing (Dict)
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
+
 
 
 ---- TYPES ----

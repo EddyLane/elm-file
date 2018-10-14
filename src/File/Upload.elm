@@ -1,29 +1,9 @@
-module File.Upload
-    exposing
-        ( Config
-        , State
-        , SubsConfig
-        , UploadingFile
-        , cancel
-        , config
-        , configBase64EncodedMsg
-        , configMaximumFileSize
-        , configSetStateMsg
-        , configUploadedMsg
-        , encode
-        , failure
-        , fileData
-        , fileFilename
-        , fileIsFailed
-        , fileIsImage
-        , fileProgress
-        , init
-        , subscriptions
-        , success
-        , update
-        , upload
-        , uploads
-        )
+module File.Upload exposing
+    ( Config, config, configBase64EncodedMsg, configMaximumFileSize, configSetStateMsg, configUploadedMsg
+    , fileData, fileFilename, fileIsFailed, fileIsImage, fileProgress
+    , State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploads
+    , subscriptions, SubsConfig
+    )
 
 {-| Provides an interface to upload files to a remote destination, but requires you to fill in some blanks
 
@@ -37,21 +17,17 @@ When you need to create an uploader you first need to init the state:
 
     import File.Upload as Upload
 
-    -- You need to keep track of the uploader state in your model
 
+    -- You need to keep track of the uploader state in your model
     type alias Model =
         { upload : Upload.State }
 
-
     -- The uploader needs to be initialized
-
     initialState : Upload.State
     initialState =
         { upload = Upload.init }
 
-
     -- You need to then configure the uploader, starting with a NoOp message; a custom type which takes no arguments.
-
     uploadConfig : Upload.Config Msg
     uploadConfig =
         Upload.config NoOp
@@ -82,8 +58,8 @@ import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
 import File.Data.UploadId as UploadId exposing (UploadId)
 import Html.Events.Extra.Drag as Drag
 import Json.Decode as Decode
-import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
+
 
 
 --- PORTS -----
@@ -279,6 +255,7 @@ encode subsConfig (Config configRec) files (State stateRec) =
                         UploadingFile file
                             (if file.size > configRec.maximumFileSize then
                                 Failed
+
                              else
                                 ReadingBase64
                             )
@@ -441,7 +418,7 @@ type alias Subs msg =
 {-| Configure subscriptions
 -}
 type alias SubsConfig msg =
-    { uploadPort : { uploadId : Encode.Value, uploadUrl: Encode.Value, base64Data: Encode.Value, additionalData: Encode.Value } -> Cmd msg
+    { uploadPort : { uploadId : Encode.Value, uploadUrl : Encode.Value, base64Data : Encode.Value, additionalData : Encode.Value } -> Cmd msg
     , readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
     , uploadCancelled : Encode.Value -> Cmd msg
     , uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
