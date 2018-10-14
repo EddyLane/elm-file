@@ -2,6 +2,7 @@ module File.Upload
     exposing
         ( Config
         , State
+        , SubsConfig
         , UploadingFile
         , cancel
         , config
@@ -68,7 +69,7 @@ When you need to create an uploader you first need to init the state:
 
 # State
 
-@docs State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploadCancelled, uploaded, uploads
+@docs State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploadCancelled, uploads
 
 
 # Subscriptions
@@ -268,8 +269,8 @@ fileData (UploadingFile file status) =
 
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
 -}
-encode : Config msg -> List Drag.File -> State -> ( State, Cmd msg )
-encode (Config config) files (State state) =
+encode : SubsConfig msg -> Config msg -> List Drag.File -> State -> ( State, Cmd msg )
+encode subsConfig (Config config) files (State state) =
     let
         ( updatedUploadCollection, insertedIds ) =
             files
@@ -295,12 +296,12 @@ encode (Config config) files (State state) =
                     ( state.uploads, [] )
     in
     ( State { state | uploads = updatedUploadCollection }
-    , stateReadCmds insertedIds updatedUploadCollection
+    , stateReadCmds subsConfig insertedIds updatedUploadCollection
     )
 
 
-stateReadCmds : List UploadId -> UploadId.Collection UploadingFile -> Cmd msg
-stateReadCmds uploadIds collection =
+stateReadCmds : SubsConfig msg -> List UploadId -> UploadId.Collection UploadingFile -> Cmd msg
+stateReadCmds { readFileContent } uploadIds collection =
     uploadIds
         |> List.filterMap
             (\id ->
@@ -308,8 +309,7 @@ stateReadCmds uploadIds collection =
                     |> UploadId.get id
                     |> Maybe.map
                         (\(UploadingFile { data } _) ->
-                            Cmd.none
-                         --                            readFileContent ( UploadId.encoder id, data )
+                            readFileContent ( UploadId.encoder id, data )
                         )
             )
         |> Cmd.batch
@@ -324,18 +324,17 @@ update uploadId file (State state) =
 
 {-| Updates a particular uploading file when it the base64 data has been successfully read from JS-land
 -}
-upload : Encode.Value -> Encode.Value -> UploadId -> State -> Cmd msg
-upload uploadUrl additionalData uploadId (State state) =
+upload : SubsConfig msg -> Encode.Value -> Encode.Value -> UploadId -> State -> Cmd msg
+upload { uploadPort } uploadUrl additionalData uploadId (State state) =
     case UploadId.get uploadId state.uploads of
         Just (UploadingFile rawFile (Uploading base64 _)) ->
-            Cmd.none
+            uploadPort
+                ( UploadId.encoder uploadId
+                , uploadUrl
+                , Base64Encoded.encoder base64
+                , additionalData
+                )
 
-        --            uploadPort
-        --                ( UploadId.encoder uploadId
-        --                , uploadUrl
-        --                , Base64Encoded.encoder base64
-        --                , additionalData
-        --                )
         _ ->
             Cmd.none
 
@@ -393,11 +392,10 @@ Returns a tuple with:
   - Cmds to cancel both the upload and any artifacts created during the upload process
 
 -}
-cancel : UploadId -> State -> ( State, Cmd msg )
-cancel uploadId (State state) =
+cancel : SubsConfig msg -> UploadId -> State -> ( State, Cmd msg )
+cancel { uploadCancelled } uploadId (State state) =
     ( State { state | uploads = UploadId.remove uploadId state.uploads }
-    , Cmd.none
-      --    , uploadCancelled (UploadId.encoder uploadId)
+    , uploadCancelled (UploadId.encoder uploadId)
     )
 
 
@@ -444,12 +442,12 @@ type alias Subs msg =
 
 
 type alias SubsConfig msg =
-    { uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
-    , uploadCancelled : Encode.Value -> Cmd msg
+    { uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
     , readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
+    , uploadCancelled : Encode.Value -> Cmd msg
+    , uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
     , fileContentReadFailed : (Encode.Value -> msg) -> Sub msg
     , fileContentRead : (Encode.Value -> msg) -> Sub msg
-    , uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
     , uploadFailed : (Encode.Value -> msg) -> Sub msg
     , uploaded : (( Encode.Value, Encode.Value ) -> msg) -> Sub msg
     }
