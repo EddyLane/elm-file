@@ -80,6 +80,7 @@ type alias ConfigRec msg =
     , setStateMsg : State -> msg
     , viewFn : State -> msg -> List (Html msg)
     , attrsFn : State -> List (Attribute msg)
+    , noOpMsg : msg
     }
 
 
@@ -94,6 +95,7 @@ config noOpMsg =
         , setStateMsg = always noOpMsg
         , viewFn = always (always [])
         , attrsFn = always []
+        , noOpMsg = noOpMsg
         }
 
 
@@ -155,43 +157,41 @@ configAttrs attrsFn (Config configRec) =
 -}
 view : State -> Config msg -> Html msg
 view (State state) (Config configRec) =
-    div (config.attrsFn (State state))
+    div (configRec.attrsFn (State state))
         [ dropZone state configRec
         , fileInput configRec
         ]
 
 
 dropZone : StateRec -> ConfigRec msg -> Html msg
-dropZone state { setStateMsg, viewFn } =
+dropZone state configRec =
     let
         setDragging dragging =
-            setStateMsg (State { state | dropActive = dragging })
+            configRec.setStateMsg (State { state | dropActive = dragging })
     in
     div
         (List.concat
-            [ config.attrsFn (State state)
-            , [ Drag.onOver (always <| setDragging True)
-              , Drag.onLeave (always <| setDragging False)
-              , Drag.onDropTarget (.dataTransfer >> .files >> config.uploadFilesMsg)
-              ]
+            [ configRec.attrsFn (State state)
+            , Drag.onDropTarget
+                { dropEffect = Drag.CopyOnDrop
+                , onEnter = Just <| always <| setDragging True
+                , onLeave = Just <| always <| setDragging False
+                , onDrop = (.dataTransfer >> .files >> configRec.uploadFilesMsg)
+                , onOver = always (always configRec.noOpMsg)
+                }
             ]
         )
-        (viewFn (State state) (config.browseClickMsg config.inputId))
+        (configRec.viewFn (State state) (configRec.browseClickMsg configRec.inputId))
 
 
 fileInput : ConfigRec msg -> Html msg
-fileInput { inputId, uploadFilesMsg } =
+fileInput { inputId, uploadFilesMsg, noOpMsg } =
     input
-        [ style [ ( "display", "none" ) ]
+        [ style "display" "none"
         , attribute "multiple" ""
         , type_ "file"
         , id inputId
-        , Html.Events.custom
-            "change"
-            { stopPropagation = False
-            , preventDefault = False
-            }
-            (fileInputDecoder inputId uploadFilesMsg)
+        , Html.Events.custom "change" (Decode.succeed { message = noOpMsg, stopPropagation = False, preventDefault = False })
         ]
         []
 

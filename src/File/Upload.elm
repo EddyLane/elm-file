@@ -124,8 +124,8 @@ type alias StateRec =
 {-| Get the collection of uploads from the state
 -}
 uploads : State -> UploadId.Collection UploadingFile
-uploads (State { uploads }) =
-    uploads
+uploads (State stateRec) =
+    stateRec.uploads
 
 
 
@@ -232,8 +232,8 @@ fileIsFailed (UploadingFile _ uploadState) =
 {-| Is the uploading file an image?
 -}
 fileIsImage : UploadingFile -> Bool
-fileIsImage (UploadingFile { typeMIME } _) =
-    String.startsWith "image" typeMIME
+fileIsImage (UploadingFile { mimeType } _) =
+    String.startsWith "image" mimeType
 
 
 {-| Get the percentage that the uploading file has uploaded
@@ -270,32 +270,32 @@ fileData (UploadingFile file status) =
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
 -}
 encode : SubsConfig msg -> Config msg -> List Drag.File -> State -> ( State, Cmd msg )
-encode subsConfig (Config config) files (State state) =
+encode subsConfig (Config configRec) files (State stateRec) =
     let
         ( updatedUploadCollection, insertedIds ) =
             files
                 |> List.map
                     (\file ->
                         UploadingFile file
-                            (if file.size > config.maximumFileSize then
+                            (if file.size > configRec.maximumFileSize then
                                 Failed
                              else
                                 ReadingBase64
                             )
                     )
                 |> List.foldl
-                    (\file ( uploadsCollection, insertedIds ) ->
+                    (\file ( uploadsCollection, inserted ) ->
                         let
                             ( id, collection ) =
                                 UploadId.insert file uploadsCollection
                         in
                         ( collection
-                        , id :: insertedIds
+                        , id :: inserted
                         )
                     )
-                    ( state.uploads, [] )
+                    ( stateRec.uploads, [] )
     in
-    ( State { state | uploads = updatedUploadCollection }
+    ( State { stateRec | uploads = updatedUploadCollection }
     , stateReadCmds subsConfig insertedIds updatedUploadCollection
     )
 
@@ -329,11 +329,11 @@ upload { uploadPort } uploadUrl additionalData uploadId (State state) =
     case UploadId.get uploadId state.uploads of
         Just (UploadingFile rawFile (Uploading base64 _)) ->
             uploadPort
-                ( UploadId.encoder uploadId
-                , uploadUrl
-                , Base64Encoded.encoder base64
-                , additionalData
-                )
+                { uploadId = UploadId.encoder uploadId
+                , uploadUrl = uploadUrl
+                , base64Data = Base64Encoded.encoder base64
+                , additionalData = additionalData
+                }
 
         _ ->
             Cmd.none
@@ -366,19 +366,19 @@ failure requestId (State state) =
 {-| Updates the progress of an upload to S3 from JS-land with a new percentage
 -}
 progress : UploadId -> Float -> State -> State
-progress id progress (State state) =
+progress id progressFloat (State state) =
     State <|
         { state
             | uploads =
                 UploadId.update id
                     (Maybe.map
-                        (\upload ->
-                            case upload of
+                        (\targetUpload ->
+                            case targetUpload of
                                 UploadingFile rawFile (Uploading base64 _) ->
-                                    UploadingFile rawFile (Uploading base64 progress)
+                                    UploadingFile rawFile (Uploading base64 progressFloat)
 
                                 _ ->
-                                    upload
+                                    targetUpload
                         )
                     )
                     state.uploads
@@ -404,24 +404,23 @@ cancel { uploadCancelled } uploadId (State state) =
 
 
 metadataEncoder : UploadingFile -> Encode.Value
-metadataEncoder (UploadingFile { typeMIME, name, size } _) =
+metadataEncoder (UploadingFile { mimeType, name, size } _) =
     Encode.object
-        [ ( "contentType", Encode.string typeMIME )
+        [ ( "contentType", Encode.string mimeType )
         , ( "fileName", Encode.string name )
         , ( "size", Encode.int size )
         ]
 
 
 base64PortDecoder : State -> Decode.Decoder ( UploadId, UploadingFile )
-base64PortDecoder (State { uploads }) =
+base64PortDecoder (State stateRec) =
     Decode.field "id" UploadId.decoder
         |> Decode.andThen
             (\requestId ->
-                case UploadId.get requestId uploads of
+                case UploadId.get requestId stateRec.uploads of
                     Just (UploadingFile rawFile _) ->
-                        Pipeline.decode (\base64 -> Uploading base64 0.0)
-                            |> Pipeline.required "result" Base64Encoded.decoder
-                            |> Decode.andThen (UploadingFile rawFile >> (,) requestId >> Decode.succeed)
+                        Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
+                            |> Decode.andThen (UploadingFile rawFile >> Tuple.pair requestId >> Decode.succeed)
 
                     _ ->
                         Decode.fail "Can't find request"
@@ -434,15 +433,15 @@ base64PortDecoder (State { uploads }) =
 
 type alias Subs msg =
     { state : State
-    , config : Config msg
-    , subscriptions : SubsConfig msg
+    , conf : Config msg
+    , subs : SubsConfig msg
     }
 
 
 {-| Configure subscriptions
 -}
 type alias SubsConfig msg =
-    { uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
+    { uploadPort : { uploadId : Encode.Value, uploadUrl: Encode.Value, base64Data: Encode.Value, additionalData: Encode.Value } -> Cmd msg
     , readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
     , uploadCancelled : Encode.Value -> Cmd msg
     , uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
@@ -456,13 +455,13 @@ type alias SubsConfig msg =
 {-| Subscriptions needed for the Uploader
 -}
 subscriptions : Subs msg -> Sub msg
-subscriptions { state, config, subscriptions } =
+subscriptions { state, conf, subs } =
     Sub.batch
-        [ fileUploadedSub subscriptions config
-        , fileFailureSub subscriptions config
-        , fileUploadProgressSub subscriptions state config
-        , base64EncodeFileSub subscriptions state config
-        , readFileContentFailedSub subscriptions config
+        [ fileUploadedSub subs conf
+        , fileFailureSub subs conf
+        , fileUploadProgressSub subs state conf
+        , base64EncodeFileSub subs state conf
+        , readFileContentFailedSub subs conf
         ]
 
 
@@ -471,8 +470,8 @@ base64EncodeFileSub { fileContentRead } state (Config { base64EncodedMsg, noOpMs
     fileContentRead
         (\encodedValue ->
             case Decode.decodeValue (base64PortDecoder state) encodedValue of
-                Ok upload ->
-                    base64EncodedMsg (Ok upload)
+                Ok uploadingFie ->
+                    base64EncodedMsg (Ok uploadingFie)
 
                 Err _ ->
                     noOpMsg
