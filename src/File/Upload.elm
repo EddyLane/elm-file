@@ -70,7 +70,7 @@ import Json.Encode as Encode
 hovering over the dropzone
 -}
 type State
-    = State StateRec
+    = State (UploadId.Collection UploadingFile)
 
 
 {-| Custom type for a file which holds the original Drag.File and the status of the upload
@@ -85,23 +85,11 @@ type UploadStatus
     | Failed
 
 
-{-| State used to represent this uploader
-
-    - `dropActive` Is the DropZone currently 'active'; files are hovering over ready to be dropped
-    - `uploads` Is the current collection of uploading files
-
--}
-type alias StateRec =
-    { dropActive : Bool
-    , uploads : UploadId.Collection UploadingFile
-    }
-
-
 {-| Get the collection of uploads from the state
 -}
 uploads : State -> UploadId.Collection UploadingFile
-uploads (State stateRec) =
-    stateRec.uploads
+uploads (State uploadsCollection) =
+    uploadsCollection
 
 
 
@@ -130,10 +118,7 @@ type alias ConfigRec msg =
 -}
 init : State
 init =
-    State <|
-        { dropActive = False
-        , uploads = UploadId.init
-        }
+    State UploadId.init
 
 
 {-| Init the configuration of this uploader with a no-op msg
@@ -246,7 +231,7 @@ fileData (UploadingFile file status) =
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
 -}
 encode : SubsConfig msg -> Config msg -> List Drag.File -> State -> ( State, Cmd msg )
-encode subsConfig (Config configRec) files (State stateRec) =
+encode subsConfig (Config configRec) files (State uploadsCollection) =
     let
         ( updatedUploadCollection, insertedIds ) =
             files
@@ -261,18 +246,18 @@ encode subsConfig (Config configRec) files (State stateRec) =
                             )
                     )
                 |> List.foldl
-                    (\file ( uploadsCollection, inserted ) ->
+                    (\file ( collection, inserted ) ->
                         let
-                            ( id, collection ) =
-                                UploadId.insert file uploadsCollection
+                            ( id, newCollection ) =
+                                UploadId.insert file collection
                         in
-                        ( collection
+                        ( newCollection
                         , id :: inserted
                         )
                     )
-                    ( stateRec.uploads, [] )
+                    ( uploadsCollection, [] )
     in
-    ( State { stateRec | uploads = updatedUploadCollection }
+    ( State updatedUploadCollection
     , stateReadCmds subsConfig insertedIds updatedUploadCollection
     )
 
@@ -295,15 +280,15 @@ stateReadCmds { readFileContent } uploadIds collection =
 {-| Update a particular upload, specified by an UploadId, with a new upload
 -}
 update : UploadId -> UploadingFile -> State -> State
-update uploadId file (State state) =
-    State { state | uploads = UploadId.update uploadId (always <| Just file) state.uploads }
+update uploadId file (State uploadsCollection) =
+    State <| UploadId.update uploadId (always <| Just file) uploadsCollection
 
 
 {-| Updates a particular uploading file when it the base64 data has been successfully read from JS-land
 -}
 upload : SubsConfig msg -> Encode.Value -> Encode.Value -> UploadId -> State -> Cmd msg
-upload { uploadPort } uploadUrl additionalData uploadId (State state) =
-    case UploadId.get uploadId state.uploads of
+upload { uploadPort } uploadUrl additionalData uploadId (State uploadsCollection) =
+    case UploadId.get uploadId uploadsCollection of
         Just (UploadingFile rawFile (Uploading base64 _)) ->
             uploadPort
                 { uploadId = UploadId.encoder uploadId
@@ -319,47 +304,41 @@ upload { uploadPort } uploadUrl additionalData uploadId (State state) =
 {-| When the file has been successfully uploaded it needs to be removed from the collection
 -}
 success : UploadId -> State -> State
-success uploadId (State state) =
-    State { state | uploads = UploadId.remove uploadId state.uploads }
+success uploadId (State uploadsCollection) =
+    State <| UploadId.remove uploadId uploadsCollection
 
 
 {-| When the upload fails we change the status of the upload to Failed
 -}
 failure : UploadId -> State -> State
-failure requestId (State state) =
+failure requestId (State uploadsCollection) =
     State <|
-        { state
-            | uploads =
-                UploadId.update requestId
-                    (Maybe.map
-                        (\(UploadingFile rawFile _) ->
-                            UploadingFile rawFile Failed
-                        )
-                    )
-                    state.uploads
-        }
+        UploadId.update requestId
+            (Maybe.map
+                (\(UploadingFile rawFile _) ->
+                    UploadingFile rawFile Failed
+                )
+            )
+            uploadsCollection
 
 
 {-| Updates the progress of an upload to S3 from JS-land with a new percentage
 -}
 progress : UploadId -> Float -> State -> State
-progress id progressFloat (State state) =
+progress id progressFloat (State uploadsCollection) =
     State <|
-        { state
-            | uploads =
-                UploadId.update id
-                    (Maybe.map
-                        (\targetUpload ->
-                            case targetUpload of
-                                UploadingFile rawFile (Uploading base64 _) ->
-                                    UploadingFile rawFile (Uploading base64 progressFloat)
+        UploadId.update id
+            (Maybe.map
+                (\targetUpload ->
+                    case targetUpload of
+                        UploadingFile rawFile (Uploading base64 _) ->
+                            UploadingFile rawFile (Uploading base64 progressFloat)
 
-                                _ ->
-                                    targetUpload
-                        )
-                    )
-                    state.uploads
-        }
+                        _ ->
+                            targetUpload
+                )
+            )
+            uploadsCollection
 
 
 {-| Cancel an upload specified by the UploadId
@@ -370,8 +349,8 @@ Returns a tuple with:
 
 -}
 cancel : SubsConfig msg -> UploadId -> State -> ( State, Cmd msg )
-cancel { uploadCancelled } uploadId (State state) =
-    ( State { state | uploads = UploadId.remove uploadId state.uploads }
+cancel { uploadCancelled } uploadId (State uploadsCollection) =
+    ( State <| UploadId.remove uploadId uploadsCollection
     , uploadCancelled (UploadId.encoder uploadId)
     )
 
@@ -390,11 +369,11 @@ metadataEncoder (UploadingFile { mimeType, name, size } _) =
 
 
 base64PortDecoder : State -> Decode.Decoder ( UploadId, UploadingFile )
-base64PortDecoder (State stateRec) =
+base64PortDecoder (State uploadsCollection) =
     Decode.field "id" UploadId.decoder
         |> Decode.andThen
             (\requestId ->
-                case UploadId.get requestId stateRec.uploads of
+                case UploadId.get requestId uploadsCollection of
                     Just (UploadingFile rawFile _) ->
                         Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
                             |> Decode.andThen (UploadingFile rawFile >> Tuple.pair requestId >> Decode.succeed)
