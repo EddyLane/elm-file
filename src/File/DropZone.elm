@@ -1,4 +1,4 @@
-port module File.DropZone
+module File.DropZone
     exposing
         ( Config
         , State
@@ -11,7 +11,6 @@ port module File.DropZone
         , configUploadFiles
         , init
         , isActive
-        , openFileBrowser
         , view
         )
 
@@ -28,11 +27,6 @@ to a server.
 
 @docs Config, config, configAttrs, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
 
-
-# Other
-
-@docs openFileBrowser
-
 -}
 
 import Drag
@@ -40,15 +34,6 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onWithOptions)
 import Json.Decode as Decode
-
-
----- PORTS ----
-
-
-{-| A port used to trigger the onClick event on an actual file input, specified by the String param
--}
-port openFileBrowser : String -> Cmd msg
-
 
 
 ---- STATE ----
