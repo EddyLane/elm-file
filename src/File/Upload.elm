@@ -69,18 +69,18 @@ When you need to create an uploader you first need to init the state:
 
 # State
 
-@docs State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploadCancelled, uploads
+@docs State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploads
 
 
 # Subscriptions
 
-@docs subscriptions
+@docs subscriptions, SubsConfig
 
 -}
 
-import Drag
 import File.Data.Base64Encoded as Base64Encoded exposing (Base64Encoded)
 import File.Data.UploadId as UploadId exposing (UploadId)
+import Html.Events.Extra.Drag as Drag
 import Json.Decode as Decode
 import Json.Decode.Pipeline as Pipeline
 import Json.Encode as Encode
@@ -432,8 +432,6 @@ base64PortDecoder (State { uploads }) =
 -- SUBSCRIPTIONS ----
 
 
-{-| Subscriptions needed for the Uploader
--}
 type alias Subs msg =
     { state : State
     , config : Config msg
@@ -441,6 +439,8 @@ type alias Subs msg =
     }
 
 
+{-| Configure subscriptions
+-}
 type alias SubsConfig msg =
     { uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
     , readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
@@ -453,6 +453,8 @@ type alias SubsConfig msg =
     }
 
 
+{-| Subscriptions needed for the Uploader
+-}
 subscriptions : Subs msg -> Sub msg
 subscriptions { state, config, subscriptions } =
     Sub.batch

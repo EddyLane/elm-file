@@ -29,10 +29,10 @@ to a server.
 
 -}
 
-import Drag
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onWithOptions)
+import Html.Events exposing (custom, onClick)
+import Html.Events.Extra.Drag as Drag
 import Json.Decode as Decode
 
 
@@ -154,29 +154,29 @@ configAttrs attrsFn (Config configRec) =
 {-| Display the component
 -}
 view : State -> Config msg -> Html msg
-view (State state) (Config config) =
+view (State state) (Config configRec) =
     div (config.attrsFn (State state))
-        [ dropZone state config
-        , fileInput config
+        [ dropZone state configRec
+        , fileInput configRec
         ]
 
 
 dropZone : StateRec -> ConfigRec msg -> Html msg
-dropZone state config =
+dropZone state { setStateMsg, viewFn } =
     let
         setDragging dragging =
-            config.setStateMsg (State { state | dropActive = dragging })
+            setStateMsg (State { state | dropActive = dragging })
     in
     div
         (List.concat
             [ config.attrsFn (State state)
             , [ Drag.onOver (always <| setDragging True)
               , Drag.onLeave (always <| setDragging False)
-              , Drag.onDrop (.dataTransfer >> .files >> config.uploadFilesMsg)
+              , Drag.onDropTarget (.dataTransfer >> .files >> config.uploadFilesMsg)
               ]
             ]
         )
-        (config.viewFn (State state) (config.browseClickMsg config.inputId))
+        (viewFn (State state) (config.browseClickMsg config.inputId))
 
 
 fileInput : ConfigRec msg -> Html msg
@@ -186,7 +186,7 @@ fileInput { inputId, uploadFilesMsg } =
         , attribute "multiple" ""
         , type_ "file"
         , id inputId
-        , onWithOptions
+        , Html.Events.custom
             "change"
             { stopPropagation = False
             , preventDefault = False
