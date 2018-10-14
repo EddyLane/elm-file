@@ -1,4 +1,4 @@
-port module File.Upload
+module File.Upload
     exposing
         ( Config
         , State
@@ -21,8 +21,6 @@ port module File.Upload
         , success
         , update
         , upload
-        , uploadCancelled
-        , uploaded
         , uploads
         )
 
@@ -88,55 +86,6 @@ import Json.Encode as Encode
 
 
 --- PORTS -----
-
-
-{-| A port used to update the progress of the upload from JS-land; Encode.Value is the UploadId and Float is the percent
--}
-port uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
-
-
-{-| A port used to cancel the upload in JS-land. Encode.Value is the UploadId
--}
-port uploadCancelled : Encode.Value -> Cmd msg
-
-
-{-| A port used to tell JS-land to read the Base64 file content of a file.
-The Encode.Value is the UploadId
-The Decode.Value is the raw JS file event. For more details see the Drag.File documentation.
--}
-port readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
-
-
-port fileContentReadFailed : (Encode.Value -> msg) -> Sub msg
-
-
-{-| A port used to update the internal file with the Base64 encoded file
--}
-port fileContentRead : (Encode.Value -> msg) -> Sub msg
-
-
-{-| A port used to tell JS-land to actually upload a file to S3. Sends the UploadId, SignedUrl and Base64Encoded data
-The encode values are:fileContentRead
-
-  - UploadId
-  - SignedUrl
-  - Base64Encoded
-
--}
-port uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
-
-
-{-| A port used to tell the internal state that an upload has failed, and to update accordingly}
--}
-port uploadFailed : (Encode.Value -> msg) -> Sub msg
-
-
-{-| A port used to tell the internal state that the file has been successfully uploaded
--}
-port uploaded : (( Encode.Value, Encode.Value ) -> msg) -> Sub msg
-
-
-
 ---- STATE ----
 
 
@@ -359,7 +308,8 @@ stateReadCmds uploadIds collection =
                     |> UploadId.get id
                     |> Maybe.map
                         (\(UploadingFile { data } _) ->
-                            readFileContent ( UploadId.encoder id, data )
+                            Cmd.none
+                         --                            readFileContent ( UploadId.encoder id, data )
                         )
             )
         |> Cmd.batch
@@ -378,13 +328,14 @@ upload : Encode.Value -> Encode.Value -> UploadId -> State -> Cmd msg
 upload uploadUrl additionalData uploadId (State state) =
     case UploadId.get uploadId state.uploads of
         Just (UploadingFile rawFile (Uploading base64 _)) ->
-            uploadPort
-                ( UploadId.encoder uploadId
-                , uploadUrl
-                , Base64Encoded.encoder base64
-                , additionalData
-                )
+            Cmd.none
 
+        --            uploadPort
+        --                ( UploadId.encoder uploadId
+        --                , uploadUrl
+        --                , Base64Encoded.encoder base64
+        --                , additionalData
+        --                )
         _ ->
             Cmd.none
 
@@ -445,7 +396,8 @@ Returns a tuple with:
 cancel : UploadId -> State -> ( State, Cmd msg )
 cancel uploadId (State state) =
     ( State { state | uploads = UploadId.remove uploadId state.uploads }
-    , uploadCancelled (UploadId.encoder uploadId)
+    , Cmd.none
+      --    , uploadCancelled (UploadId.encoder uploadId)
     )
 
 
@@ -479,24 +431,43 @@ base64PortDecoder (State { uploads }) =
 
 
 
----- SUBSCRIPTIONS ----
+-- SUBSCRIPTIONS ----
 
 
 {-| Subscriptions needed for the Uploader
 -}
-subscriptions : State -> Config msg -> Sub msg
-subscriptions state config =
+type alias Subs msg =
+    { state : State
+    , config : Config msg
+    , subscriptions : SubsConfig msg
+    }
+
+
+type alias SubsConfig msg =
+    { uploadProgress : (( Encode.Value, Float ) -> msg) -> Sub msg
+    , uploadCancelled : Encode.Value -> Cmd msg
+    , readFileContent : ( Encode.Value, Decode.Value ) -> Cmd msg
+    , fileContentReadFailed : (Encode.Value -> msg) -> Sub msg
+    , fileContentRead : (Encode.Value -> msg) -> Sub msg
+    , uploadPort : ( Encode.Value, Encode.Value, Encode.Value, Encode.Value ) -> Cmd msg
+    , uploadFailed : (Encode.Value -> msg) -> Sub msg
+    , uploaded : (( Encode.Value, Encode.Value ) -> msg) -> Sub msg
+    }
+
+
+subscriptions : Subs msg -> Sub msg
+subscriptions { state, config, subscriptions } =
     Sub.batch
-        [ fileUploadedSub config
-        , fileFailureSub config
-        , fileUploadProgressSub state config
-        , base64EncodeFileSub state config
-        , readFileContentFailedSub config
+        [ fileUploadedSub subscriptions config
+        , fileFailureSub subscriptions config
+        , fileUploadProgressSub subscriptions state config
+        , base64EncodeFileSub subscriptions state config
+        , readFileContentFailedSub subscriptions config
         ]
 
 
-base64EncodeFileSub : State -> Config msg -> Sub msg
-base64EncodeFileSub state (Config { base64EncodedMsg, noOpMsg }) =
+base64EncodeFileSub : SubsConfig msg -> State -> Config msg -> Sub msg
+base64EncodeFileSub { fileContentRead } state (Config { base64EncodedMsg, noOpMsg }) =
     fileContentRead
         (\encodedValue ->
             case Decode.decodeValue (base64PortDecoder state) encodedValue of
@@ -508,8 +479,8 @@ base64EncodeFileSub state (Config { base64EncodedMsg, noOpMsg }) =
         )
 
 
-fileUploadedSub : Config msg -> Sub msg
-fileUploadedSub (Config { noOpMsg, uploadedMsg }) =
+fileUploadedSub : SubsConfig msg -> Config msg -> Sub msg
+fileUploadedSub { uploaded } (Config { noOpMsg, uploadedMsg }) =
     uploaded
         (\( encodedId, encodedAttachment ) ->
             case Decode.decodeValue UploadId.decoder encodedId of
@@ -521,8 +492,8 @@ fileUploadedSub (Config { noOpMsg, uploadedMsg }) =
         )
 
 
-readFileContentFailedSub : Config msg -> Sub msg
-readFileContentFailedSub (Config { noOpMsg, base64EncodedMsg }) =
+readFileContentFailedSub : SubsConfig msg -> Config msg -> Sub msg
+readFileContentFailedSub { fileContentReadFailed } (Config { noOpMsg, base64EncodedMsg }) =
     fileContentReadFailed
         (Decode.decodeValue UploadId.decoder
             >> Result.toMaybe
@@ -531,8 +502,8 @@ readFileContentFailedSub (Config { noOpMsg, base64EncodedMsg }) =
         )
 
 
-fileFailureSub : Config msg -> Sub msg
-fileFailureSub (Config { noOpMsg, uploadedMsg }) =
+fileFailureSub : SubsConfig msg -> Config msg -> Sub msg
+fileFailureSub { uploadFailed } (Config { noOpMsg, uploadedMsg }) =
     uploadFailed
         (Decode.decodeValue UploadId.decoder
             >> Result.toMaybe
@@ -541,8 +512,8 @@ fileFailureSub (Config { noOpMsg, uploadedMsg }) =
         )
 
 
-fileUploadProgressSub : State -> Config msg -> Sub msg
-fileUploadProgressSub state (Config { noOpMsg, setStateMsg }) =
+fileUploadProgressSub : SubsConfig msg -> State -> Config msg -> Sub msg
+fileUploadProgressSub { uploadProgress } state (Config { noOpMsg, setStateMsg }) =
     uploadProgress
         (\( id, uploadProgressFloat ) ->
             case Decode.decodeValue UploadId.decoder id of
