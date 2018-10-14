@@ -73,10 +73,26 @@ type alias PortMsg =
     }
 
 
+type alias PortMsgDecoded =
+    { data : Encode.Value
+    , message : String
+    , uploadId : UploadId
+    }
+
+
 type alias Ports msg =
     { cmd : PortMsg -> Cmd msg
     , sub : (PortMsg -> msg) -> Sub msg
     }
+
+
+decodePortMsg : PortMsg -> Maybe PortMsgDecoded
+decodePortMsg { message, uploadId, data } =
+    Result.toMaybe <|
+        Result.map2
+            (PortMsgDecoded data)
+            (Decode.decodeValue Decode.string message)
+            (Decode.decodeValue UploadId.decoder uploadId)
 
 
 
@@ -418,56 +434,61 @@ metadataEncoder (UploadingFile { mimeType, name, size } _) =
         ]
 
 
-base64PortDecoder : State -> Decode.Decoder ( UploadId, UploadingFile )
-base64PortDecoder (State uploadsCollection) =
-    Decode.field "id" UploadId.decoder
-        |> Decode.andThen
-            (\requestId ->
-                case UploadId.get requestId uploadsCollection of
-                    Just (UploadingFile rawFile _) ->
-                        Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
-                            |> Decode.andThen (UploadingFile rawFile >> Tuple.pair requestId >> Decode.succeed)
-
-                    _ ->
-                        Decode.fail "Can't find request"
-            )
-
-
 
 -- SUBSCRIPTIONS ----
 
 
-subscriptions : Config msg -> Sub msg
-subscriptions conf =
-    Sub.none
+{-| Subscriptions needed for the Uploader
+-}
+subscriptions : Config msg -> State -> Sub msg
+subscriptions ((Config { ports, noOpMsg }) as conf) state =
+    ports.sub
+        (decodePortMsg
+            >> Maybe.map (dispatchSub conf state)
+            >> Maybe.withDefault noOpMsg
+        )
+
+
+dispatchSub : Config msg -> State -> PortMsgDecoded -> msg
+dispatchSub ((Config { noOpMsg }) as conf) state portsMsg =
+    case portsMsg.message of
+        "encode" ->
+            subEncode conf state portsMsg
+
+        _ ->
+            noOpMsg
+
+
+subEncode : Config msg -> State -> PortMsgDecoded -> msg
+subEncode (Config { noOpMsg, base64EncodedMsg }) (State uploadsCollection) { uploadId, data } =
+    case UploadId.get uploadId uploadsCollection of
+        Just (UploadingFile rawFile _) ->
+            data
+                |> Decode.decodeValue
+                    (Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
+                        |> Decode.andThen (UploadingFile rawFile >> Tuple.pair uploadId >> Decode.succeed)
+                    )
+                |> Result.map (Ok >> base64EncodedMsg)
+                |> Result.withDefault (base64EncodedMsg (Err uploadId))
+
+        _ ->
+            base64EncodedMsg (Err uploadId)
 
 
 
---{-| Subscriptions needed for the Uploader
----}
---subscriptions : Subs msg -> Sub msg
---subscriptions { state, conf, subs } =
+--    case Decode.decodeValue (base64PortDecoder state) data of
+--        Ok uploadingFie ->
+--            base64EncodedMsg (Ok uploadingFie)
+--
+--        Err _ ->
+--            noOpMsg
 --    Sub.batch
 --        [ fileUploadedSub subs conf
---        , fileFailureSub subs conf
---        , fileUploadProgressSub subs state conf
---        , base64EncodeFileSub subs state conf
---        , readFileContentFailedSub subs conf
+----        , fileFailureSub subs conf
+----        , fileUploadProgressSub subs state conf
+----        , base64EncodeFileSub subs state conf
+----        , readFileContentFailedSub subs conf
 --        ]
---
---
---base64EncodeFileSub : SubsConfig msg -> State -> Config msg -> Sub msg
---base64EncodeFileSub { fileContentRead } state (Config { base64EncodedMsg, noOpMsg }) =
---    fileContentRead
---        (\encodedValue ->
---            case Decode.decodeValue (base64PortDecoder state) encodedValue of
---                Ok uploadingFie ->
---                    base64EncodedMsg (Ok uploadingFie)
---
---                Err _ ->
---                    noOpMsg
---        )
---
 --
 --fileUploadedSub : SubsConfig msg -> Config msg -> Sub msg
 --fileUploadedSub { uploaded } (Config { noOpMsg, uploadedMsg }) =
