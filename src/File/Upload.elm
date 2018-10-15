@@ -479,7 +479,7 @@ subEncoded { base64EncodedMsg } (State uploadsCollection) portsMsg =
                 Just (UploadingFile rawFile _) ->
                     data
                         |> Decode.decodeValue
-                            (Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
+                            (Decode.map (\base64 -> Uploading base64 0.0) Base64Encoded.decoder
                                 |> Decode.andThen (UploadingFile rawFile >> Tuple.pair portsMsg.uploadId >> Decode.succeed)
                             )
                         |> Result.map (Ok >> base64EncodedMsg)
