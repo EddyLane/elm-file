@@ -3,7 +3,7 @@ module File.Upload exposing
     , fileData, fileFilename, fileIsFailed, fileIsImage, fileProgress
     , State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploads
     , subscriptions
-    , PortMsg, Ports, configPorts
+    , PortCmdMsg, Ports, configPorts
     )
 
 {-| Provides an interface to upload files to a remote destination, but requires you to fill in some blanks
@@ -64,33 +64,48 @@ import Json.Encode as Encode
 
 
 --- PORTS -----
+--type PortSubMsg
+--    = Success { data : Decode.Value, message : String, uploadId : UploadId }
+--    | Error { error : Result String () }
 
 
-type alias PortMsg =
+type alias PortCmdMsg =
     { message : Encode.Value
     , uploadId : Encode.Value
     , data : Encode.Value
     }
 
 
-type alias PortMsgDecoded =
+type alias PortSubMsgError =
+    { error : String
+    , message : String
+    , uploadId : UploadId
+    }
+
+
+type alias PortSubMsgSuccess =
     { data : Encode.Value
     , message : String
     , uploadId : UploadId
     }
 
 
+type PortSubData
+    = PortSubSuccess Encode.Value
+    | PortSubError String
+
+
 type alias Ports msg =
-    { cmd : PortMsg -> Cmd msg
-    , sub : (PortMsg -> msg) -> Sub msg
+    { cmd : PortCmdMsg -> Cmd msg
+    , sub : (PortCmdMsg -> msg) -> Sub msg
     }
 
 
-decodePortMsg : PortMsg -> Maybe PortMsgDecoded
+decodePortMsg : PortCmdMsg -> Maybe PortSubMsgSuccess
 decodePortMsg { message, uploadId, data } =
     Result.toMaybe <|
         Result.map2
-            (PortMsgDecoded data)
+            (PortSubMsgSuccess data)
             (Decode.decodeValue Decode.string message)
             (Decode.decodeValue UploadId.decoder uploadId)
 
@@ -99,8 +114,7 @@ decodePortMsg { message, uploadId, data } =
 ---- STATE ----
 
 
-{-| Opaque type for the state of the uploader. The state includes the current uploads and information about if the user is
-hovering over the dropzone
+{-| Opaque type for the state of the uploader
 -}
 type State
     = State (UploadId.Collection UploadingFile)
@@ -173,7 +187,7 @@ config noOpMsg =
         }
 
 
-configPorts : { cmd : PortMsg -> Cmd msg, sub : (PortMsg -> msg) -> Sub msg } -> Config msg -> Config msg
+configPorts : { cmd : PortCmdMsg -> Cmd msg, sub : (PortCmdMsg -> msg) -> Sub msg } -> Config msg -> Config msg
 configPorts ports (Config configRec) =
     Config <|
         { configRec | ports = ports }
@@ -449,59 +463,44 @@ subscriptions ((Config { ports, noOpMsg }) as conf) state =
         )
 
 
-dispatchSub : Config msg -> State -> PortMsgDecoded -> msg
-dispatchSub ((Config { noOpMsg }) as conf) state portsMsg =
+dispatchSub : Config msg -> State -> PortSubMsgSuccess -> msg
+dispatchSub ((Config confRec) as conf) state portsMsg =
     case portsMsg.message of
         "encode" ->
-            subEncode conf state portsMsg
+            subEncoded confRec state portsMsg
+
+        "upload" ->
+            subUploaded confRec portsMsg
 
         _ ->
-            noOpMsg
+            confRec.noOpMsg
 
 
-subEncode : Config msg -> State -> PortMsgDecoded -> msg
-subEncode (Config { noOpMsg, base64EncodedMsg }) (State uploadsCollection) { uploadId, data } =
-    case UploadId.get uploadId uploadsCollection of
+subEncoded : ConfigRec msg -> State -> PortSubMsgSuccess -> msg
+subEncoded { base64EncodedMsg } (State uploadsCollection) portsMsg =
+    case UploadId.get portsMsg.uploadId uploadsCollection of
         Just (UploadingFile rawFile _) ->
-            data
+            portsMsg.data
                 |> Decode.decodeValue
-                    (Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
-                        |> Decode.andThen (UploadingFile rawFile >> Tuple.pair uploadId >> Decode.succeed)
+                    (Decode.oneOf
+                        [ --                        Decode.field "error" Decode.null
+                          Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
+                            |> Decode.andThen (UploadingFile rawFile >> Tuple.pair portsMsg.uploadId >> Decode.succeed)
+                        ]
                     )
                 |> Result.map (Ok >> base64EncodedMsg)
-                |> Result.withDefault (base64EncodedMsg (Err uploadId))
+                |> Result.withDefault (base64EncodedMsg (Err portsMsg.uploadId))
 
         _ ->
-            base64EncodedMsg (Err uploadId)
+            base64EncodedMsg (Err portsMsg.uploadId)
+
+
+subUploaded : ConfigRec msg -> PortSubMsgSuccess -> msg
+subUploaded { noOpMsg, uploadedMsg } { uploadId, data } =
+    uploadedMsg (Ok ( uploadId, data ))
 
 
 
---    case Decode.decodeValue (base64PortDecoder state) data of
---        Ok uploadingFie ->
---            base64EncodedMsg (Ok uploadingFie)
---
---        Err _ ->
---            noOpMsg
---    Sub.batch
---        [ fileUploadedSub subs conf
-----        , fileFailureSub subs conf
-----        , fileUploadProgressSub subs state conf
-----        , base64EncodeFileSub subs state conf
-----        , readFileContentFailedSub subs conf
---        ]
---
---fileUploadedSub : SubsConfig msg -> Config msg -> Sub msg
---fileUploadedSub { uploaded } (Config { noOpMsg, uploadedMsg }) =
---    uploaded
---        (\( encodedId, encodedAttachment ) ->
---            case Decode.decodeValue UploadId.decoder encodedId of
---                Ok uploadId ->
---                    uploadedMsg (Ok ( uploadId, encodedAttachment ))
---
---                Err _ ->
---                    noOpMsg
---        )
---
 --
 --readFileContentFailedSub : SubsConfig msg -> Config msg -> Sub msg
 --readFileContentFailedSub { fileContentReadFailed } (Config { noOpMsg, base64EncodedMsg }) =
