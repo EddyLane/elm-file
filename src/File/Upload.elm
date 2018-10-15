@@ -121,7 +121,7 @@ type UploadingFile
 type UploadStatus
     = ReadingBase64
     | Uploading Base64Encoded Float
-    | Failed String
+    | Failed (List String)
 
 
 {-| Get the collection of uploads from the state
@@ -251,8 +251,8 @@ fileIsFailed (UploadingFile _ uploadState) =
 fileError : UploadingFile -> String
 fileError (UploadingFile _ uploadState) =
     case uploadState of
-        Failed error ->
-            error
+        Failed errors ->
+            String.join " - " errors
 
         _ ->
             ""
@@ -294,17 +294,62 @@ fileData (UploadingFile file status) =
 
 
 ---- UPDATE ----
---fileStatus : ConfigRec msg-> Drag.File -> UploadStatus
---fileStatus configRec file =
+--validateFile : ConfigRec msg -> Drag.File -> List String
+--validateFile configRec file =
 --    let
 --        invalidSize =
---            file.size > configRec.maximumFileSize
+--            ( file.size > configRec.maximumFileSize, "Above maximum file size" )
 --
 --        invalidMimeType =
---            not (List.member file.mimeType configRec.allowedMimeTypes)
+--            case configRec.allowedMimeTypes of
+--                Just allowed ->
+--                     not (List.member file.mimeType configRec.allowedMimeTypes)
+--                Nothing ->
+--                    False
 --
+--            ( not (List.member file.mimeType configRec.allowedMimeTypes), "Invalid file type" )
 --    in
---        case (invalidSize, invalidMimeType)
+--    [ validateSize configRec file
+--    , invalidMimeType configRec file
+--    ]
+--        |> List.filterMap
+--            (\( invalid, errorMessage ) ->
+--                if invalid then
+--                    Just errorMessage
+--
+--                else
+--                    Nothing
+--            )
+
+
+validate : ConfigRec msg -> Drag.File -> List String
+validate configRec file =
+    List.filterMap identity
+        [ validateSize configRec file
+        , validateMimeType configRec file
+        ]
+
+
+validateSize : ConfigRec msg -> Drag.File -> Maybe String
+validateSize configRec file =
+    if file.size > configRec.maximumFileSize then
+        Just "Above maximum file size"
+
+    else
+        Nothing
+
+
+validateMimeType : ConfigRec msg -> Drag.File -> Maybe String
+validateMimeType configRec file =
+    configRec.allowedMimeTypes
+        |> Maybe.andThen
+            (\allowedMimeTypes ->
+                if List.member file.mimeType allowedMimeTypes then
+                    Nothing
+
+                else
+                    Just "Invalid file type"
+            )
 
 
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
@@ -315,20 +360,19 @@ encode (Config configRec) files (State uploadsCollection) =
         uploadingFiles =
             List.map
                 (\file ->
-                    UploadingFile file
-                        (if file.size > configRec.maximumFileSize then
-                            Failed "Above maximum file size"
+                    let
+                        errors =
+                            validate configRec file
+                    in
+                    if List.isEmpty errors then
+                        UploadingFile file ReadingBase64
 
-                         else if Maybe.map (List.member file.mimeType) configRec.allowedMimeTypes |> Maybe.withDefault False then
-                            Failed "Invalid file type"
-
-                         else
-                            ReadingBase64
-                        )
+                    else
+                        UploadingFile file (Failed errors)
                 )
                 files
 
-        ( updatedUploadCollection, insertedIds ) =
+        ( updatedUploadCollection, successfulUploadIds ) =
             uploadingFiles
                 |> List.foldl
                     (\((UploadingFile _ status) as file) ( collection, inserted ) ->
@@ -350,7 +394,7 @@ encode (Config configRec) files (State uploadsCollection) =
                     ( uploadsCollection, [] )
     in
     ( State updatedUploadCollection
-    , stateReadCmds configRec.ports insertedIds updatedUploadCollection
+    , stateReadCmds configRec.ports successfulUploadIds updatedUploadCollection
     )
 
 
@@ -416,7 +460,7 @@ failure requestId failureReason (State uploadsCollection) =
         UploadId.update requestId
             (Maybe.map
                 (\(UploadingFile rawFile _) ->
-                    UploadingFile rawFile (Failed failureReason)
+                    UploadingFile rawFile (Failed [ failureReason ])
                 )
             )
             uploadsCollection
