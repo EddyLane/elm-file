@@ -3,7 +3,7 @@ module File.Upload exposing
     , fileData, fileFilename, fileIsFailed, fileIsImage, fileProgress
     , State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploads
     , subscriptions
-    , PortCmdMsg, Ports, configPorts, fileError
+    , PortCmdMsg, Ports, configAllowedMimeTypes, configPorts, fileError
     )
 
 {-| Provides an interface to upload files to a remote destination, but requires you to fill in some blanks
@@ -146,6 +146,7 @@ type Config msg
 type alias ConfigRec msg =
     { dragMsg : Bool -> msg
     , maximumFileSize : Int
+    , allowedMimeTypes : Maybe (List String)
     , uploadedMsg : Result ( UploadId, String ) ( UploadId, Encode.Value ) -> msg
     , base64EncodedMsg : Result ( UploadId, String ) ( UploadId, UploadingFile ) -> msg
     , setStateMsg : State -> msg
@@ -168,6 +169,7 @@ config noOpMsg =
     Config <|
         { dragMsg = always noOpMsg
         , maximumFileSize = 5000
+        , allowedMimeTypes = Nothing
         , uploadedMsg = always noOpMsg
         , noOpMsg = noOpMsg
         , setStateMsg = always noOpMsg
@@ -215,6 +217,12 @@ configMaximumFileSize : Int -> Config msg -> Config msg
 configMaximumFileSize size (Config configRec) =
     Config <|
         { configRec | maximumFileSize = size }
+
+
+configAllowedMimeTypes : List String -> Config msg -> Config msg
+configAllowedMimeTypes allowedMimeTypes (Config configRec) =
+    Config <|
+        { configRec | allowedMimeTypes = Just allowedMimeTypes }
 
 
 
@@ -286,6 +294,17 @@ fileData (UploadingFile file status) =
 
 
 ---- UPDATE ----
+--fileStatus : ConfigRec msg-> Drag.File -> UploadStatus
+--fileStatus configRec file =
+--    let
+--        invalidSize =
+--            file.size > configRec.maximumFileSize
+--
+--        invalidMimeType =
+--            not (List.member file.mimeType configRec.allowedMimeTypes)
+--
+--    in
+--        case (invalidSize, invalidMimeType)
 
 
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
@@ -299,6 +318,9 @@ encode (Config configRec) files (State uploadsCollection) =
                     UploadingFile file
                         (if file.size > configRec.maximumFileSize then
                             Failed "Above maximum file size"
+
+                         else if Maybe.map (List.member file.mimeType) configRec.allowedMimeTypes |> Maybe.withDefault False then
+                            Failed "Invalid file type"
 
                          else
                             ReadingBase64
