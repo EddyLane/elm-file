@@ -1,6 +1,7 @@
 module File.DropZone exposing
     ( State, init, isActive, view
     , Config, config, configAttrs, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
+    , configPorts, openFileBrowser, subscriptions
     )
 
 {-| This library provides a UI element that acts as a "DropZone"; a place where users can drop files on to upload them
@@ -18,11 +19,26 @@ to a server.
 
 -}
 
+import File.Upload exposing (PortCmdMsg, Ports)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (custom, onClick)
 import Html.Events.Extra.Drag as Drag
 import Json.Decode as Decode
+import Json.Encode as Encode
+
+
+
+---- PORTS ----
+
+
+openFileBrowser : Config msg -> String -> Cmd msg
+openFileBrowser (Config confRec) inputId =
+    confRec.ports.cmd
+        { message = Encode.string "open-file-browser"
+        , uploadId = Encode.null
+        , data = Encode.string inputId
+        }
 
 
 
@@ -71,6 +87,7 @@ type alias ConfigRec msg =
     , viewFn : State -> msg -> List (Html msg)
     , attrsFn : State -> List (Attribute msg)
     , noOpMsg : msg
+    , ports : Ports msg
     }
 
 
@@ -86,7 +103,17 @@ config noOpMsg =
         , viewFn = always (always [])
         , attrsFn = always []
         , noOpMsg = noOpMsg
+        , ports =
+            { cmd = always Cmd.none
+            , sub = always Sub.none
+            }
         }
+
+
+configPorts : { cmd : PortCmdMsg -> Cmd msg, sub : (PortCmdMsg -> msg) -> Sub msg } -> Config msg -> Config msg
+configPorts ports (Config configRec) =
+    Config <|
+        { configRec | ports = ports }
 
 
 {-| Configure a msg that will update the state of this component. Often you will be forced to fill in the blanks when
@@ -192,3 +219,12 @@ fileInputDecoder msg =
         |> Drag.fileListDecoder
         |> Decode.at [ "target", "files" ]
         |> Decode.map msg
+
+
+
+---- SUBSCRIPTIONS ----
+
+
+subscriptions : Config msg -> State -> Sub msg
+subscriptions _ _ =
+    Sub.none

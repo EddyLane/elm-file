@@ -64,9 +64,6 @@ import Json.Encode as Encode
 
 
 --- PORTS -----
---type PortSubMsg
---    = Success { data : Decode.Value, message : String, uploadId : UploadId }
---    | Error { error : Result String () }
 
 
 type alias PortCmdMsg =
@@ -76,23 +73,11 @@ type alias PortCmdMsg =
     }
 
 
-type alias PortSubMsgError =
-    { error : String
+type alias PortSubMsg =
+    { data : Result String Encode.Value
     , message : String
     , uploadId : UploadId
     }
-
-
-type alias PortSubMsgSuccess =
-    { data : Encode.Value
-    , message : String
-    , uploadId : UploadId
-    }
-
-
-type PortSubData
-    = PortSubSuccess Encode.Value
-    | PortSubError String
 
 
 type alias Ports msg =
@@ -101,13 +86,20 @@ type alias Ports msg =
     }
 
 
-decodePortMsg : PortCmdMsg -> Maybe PortSubMsgSuccess
+decodePortMsg : PortCmdMsg -> Maybe PortSubMsg
 decodePortMsg { message, uploadId, data } =
     Result.toMaybe <|
         Result.map2
-            (PortSubMsgSuccess data)
+            (PortSubMsg <| decodePortMsgData data)
             (Decode.decodeValue Decode.string message)
             (Decode.decodeValue UploadId.decoder uploadId)
+
+
+decodePortMsgData : Encode.Value -> Result String Encode.Value
+decodePortMsgData data =
+    data
+        |> Decode.decodeValue (Decode.field "error" Decode.string |> Decode.andThen (Err >> Decode.succeed))
+        |> Result.withDefault (Ok data)
 
 
 
@@ -129,7 +121,7 @@ type UploadingFile
 type UploadStatus
     = ReadingBase64
     | Uploading Base64Encoded Float
-    | Failed
+    | Failed String
 
 
 {-| Get the collection of uploads from the state
@@ -154,8 +146,8 @@ type Config msg
 type alias ConfigRec msg =
     { dragMsg : Bool -> msg
     , maximumFileSize : Int
-    , uploadedMsg : Result UploadId ( UploadId, Encode.Value ) -> msg
-    , base64EncodedMsg : Result UploadId ( UploadId, UploadingFile ) -> msg
+    , uploadedMsg : Result ( UploadId, String ) ( UploadId, Encode.Value ) -> msg
+    , base64EncodedMsg : Result ( UploadId, String ) ( UploadId, UploadingFile ) -> msg
     , setStateMsg : State -> msg
     , noOpMsg : msg
     , ports : Ports msg
@@ -203,7 +195,7 @@ configSetStateMsg setStateMsg (Config configRec) =
 
 {-| Configure what happens when the file is uploaded
 -}
-configUploadedMsg : (Result UploadId ( UploadId, Encode.Value ) -> msg) -> Config msg -> Config msg
+configUploadedMsg : (Result ( UploadId, String ) ( UploadId, Encode.Value ) -> msg) -> Config msg -> Config msg
 configUploadedMsg msg (Config configRec) =
     Config <|
         { configRec | uploadedMsg = msg }
@@ -211,7 +203,7 @@ configUploadedMsg msg (Config configRec) =
 
 {-| Configure what to do to encode the file to a Base64Encoded model
 -}
-configBase64EncodedMsg : (Result UploadId ( UploadId, UploadingFile ) -> msg) -> Config msg -> Config msg
+configBase64EncodedMsg : (Result ( UploadId, String ) ( UploadId, UploadingFile ) -> msg) -> Config msg -> Config msg
 configBase64EncodedMsg msg (Config configRec) =
     Config <|
         { configRec | base64EncodedMsg = msg }
@@ -241,7 +233,7 @@ fileFilename (UploadingFile { name } _) =
 fileIsFailed : UploadingFile -> Bool
 fileIsFailed (UploadingFile _ uploadState) =
     case uploadState of
-        Failed ->
+        Failed _ ->
             True
 
         _ ->
@@ -278,7 +270,7 @@ fileData (UploadingFile file status) =
         Uploading base64Encoded _ ->
             Just base64Encoded
 
-        Failed ->
+        Failed _ ->
             Nothing
 
 
@@ -297,7 +289,7 @@ encode (Config configRec) files (State uploadsCollection) =
                     (\file ->
                         UploadingFile file
                             (if file.size > configRec.maximumFileSize then
-                                Failed
+                                Failed "Above maximum file size"
 
                              else
                                 ReadingBase64
@@ -376,13 +368,13 @@ success uploadId (State uploadsCollection) =
 
 {-| When the upload fails we change the status of the upload to Failed
 -}
-failure : UploadId -> State -> State
-failure requestId (State uploadsCollection) =
+failure : UploadId -> String -> State -> State
+failure requestId failureReason (State uploadsCollection) =
     State <|
         UploadId.update requestId
             (Maybe.map
                 (\(UploadingFile rawFile _) ->
-                    UploadingFile rawFile Failed
+                    UploadingFile rawFile (Failed failureReason)
                 )
             )
             uploadsCollection
@@ -463,73 +455,61 @@ subscriptions ((Config { ports, noOpMsg }) as conf) state =
         )
 
 
-dispatchSub : Config msg -> State -> PortSubMsgSuccess -> msg
+dispatchSub : Config msg -> State -> PortSubMsg -> msg
 dispatchSub ((Config confRec) as conf) state portsMsg =
     case portsMsg.message of
         "encode" ->
             subEncoded confRec state portsMsg
 
         "upload" ->
-            subUploaded confRec portsMsg
+            subUploaded confRec state portsMsg
+
+        "progress" ->
+            subProgress confRec state portsMsg
 
         _ ->
             confRec.noOpMsg
 
 
-subEncoded : ConfigRec msg -> State -> PortSubMsgSuccess -> msg
+subEncoded : ConfigRec msg -> State -> PortSubMsg -> msg
 subEncoded { base64EncodedMsg } (State uploadsCollection) portsMsg =
-    case UploadId.get portsMsg.uploadId uploadsCollection of
-        Just (UploadingFile rawFile _) ->
-            portsMsg.data
-                |> Decode.decodeValue
-                    (Decode.oneOf
-                        [ --                        Decode.field "error" Decode.null
-                          Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
-                            |> Decode.andThen (UploadingFile rawFile >> Tuple.pair portsMsg.uploadId >> Decode.succeed)
-                        ]
-                    )
-                |> Result.map (Ok >> base64EncodedMsg)
-                |> Result.withDefault (base64EncodedMsg (Err portsMsg.uploadId))
+    case portsMsg.data of
+        Ok data ->
+            case UploadId.get portsMsg.uploadId uploadsCollection of
+                Just (UploadingFile rawFile _) ->
+                    data
+                        |> Decode.decodeValue
+                            (Decode.map (\base64 -> Uploading base64 0.0) (Decode.field "result" Base64Encoded.decoder)
+                                |> Decode.andThen (UploadingFile rawFile >> Tuple.pair portsMsg.uploadId >> Decode.succeed)
+                            )
+                        |> Result.map (Ok >> base64EncodedMsg)
+                        |> Result.withDefault (base64EncodedMsg (Err ( portsMsg.uploadId, "Problem decoding base64 data" )))
 
-        _ ->
-            base64EncodedMsg (Err portsMsg.uploadId)
+                Nothing ->
+                    base64EncodedMsg (Err ( portsMsg.uploadId, "Could not find file" ))
 
-
-subUploaded : ConfigRec msg -> PortSubMsgSuccess -> msg
-subUploaded { noOpMsg, uploadedMsg } { uploadId, data } =
-    uploadedMsg (Ok ( uploadId, data ))
+        Err err ->
+            base64EncodedMsg (Err ( portsMsg.uploadId, err ))
 
 
+subUploaded : ConfigRec msg -> State -> PortSubMsg -> msg
+subUploaded { noOpMsg, uploadedMsg } _ portsMsg =
+    case portsMsg.data of
+        Ok data ->
+            uploadedMsg (Ok ( portsMsg.uploadId, data ))
 
---
---readFileContentFailedSub : SubsConfig msg -> Config msg -> Sub msg
---readFileContentFailedSub { fileContentReadFailed } (Config { noOpMsg, base64EncodedMsg }) =
---    fileContentReadFailed
---        (Decode.decodeValue UploadId.decoder
---            >> Result.toMaybe
---            >> Maybe.map (Err >> base64EncodedMsg)
---            >> Maybe.withDefault noOpMsg
---        )
---
---
---fileFailureSub : SubsConfig msg -> Config msg -> Sub msg
---fileFailureSub { uploadFailed } (Config { noOpMsg, uploadedMsg }) =
---    uploadFailed
---        (Decode.decodeValue UploadId.decoder
---            >> Result.toMaybe
---            >> Maybe.map (Err >> uploadedMsg)
---            >> Maybe.withDefault noOpMsg
---        )
---
---
---fileUploadProgressSub : SubsConfig msg -> State -> Config msg -> Sub msg
---fileUploadProgressSub { uploadProgress } state (Config { noOpMsg, setStateMsg }) =
---    uploadProgress
---        (\( id, uploadProgressFloat ) ->
---            case Decode.decodeValue UploadId.decoder id of
---                Ok uploadId ->
---                    setStateMsg <| progress uploadId uploadProgressFloat state
---
---                Err _ ->
---                    setStateMsg state
---        )
+        Err err ->
+            uploadedMsg (Err ( portsMsg.uploadId, err ))
+
+
+subProgress : ConfigRec msg -> State -> PortSubMsg -> msg
+subProgress { noOpMsg, setStateMsg } state portsMsg =
+    case portsMsg.data of
+        Ok data ->
+            data
+                |> Decode.decodeValue Decode.float
+                |> Result.map (\progressFloat -> setStateMsg <| progress portsMsg.uploadId progressFloat state)
+                |> Result.withDefault noOpMsg
+
+        Err _ ->
+            noOpMsg
