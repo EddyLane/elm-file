@@ -1,7 +1,7 @@
 module File.DropZone exposing
     ( State, init, isActive, view
-    , Config, config, configAttrs, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
-    , configPorts, openFileBrowser, subscriptions
+    , Config, config, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
+    , configPorts, dropZoneDragAttrs, openFileBrowser, subscriptions
     )
 
 {-| This library provides a UI element that acts as a "DropZone"; a place where users can drop files on to upload them
@@ -84,8 +84,7 @@ type alias ConfigRec msg =
     , inputId : String
     , browseClickMsg : String -> msg
     , setStateMsg : State -> msg
-    , viewFn : State -> msg -> List (Html msg)
-    , attrsFn : State -> List (Attribute msg)
+    , viewFn : State -> msg -> List (Attribute msg) -> List (Html msg)
     , noOpMsg : msg
     , ports : Ports msg
     }
@@ -100,8 +99,7 @@ config noOpMsg =
         , inputId = "elm-file-uploader"
         , browseClickMsg = always noOpMsg
         , setStateMsg = always noOpMsg
-        , viewFn = always (always [])
-        , attrsFn = always []
+        , viewFn = always (always (always []))
         , noOpMsg = noOpMsg
         , ports =
             { cmd = always Cmd.none
@@ -152,53 +150,44 @@ configBrowseFiles msg (Config configRec) =
 {-| Configure how to display the contents of the DropZone. Takes a function which takes the state of the dropzone, and
 an event to open a file browser to upload more files
 -}
-configContents : (State -> msg -> List (Html msg)) -> Config msg -> Config msg
+configContents : (State -> msg -> List (Attribute msg) -> List (Html msg)) -> Config msg -> Config msg
 configContents viewFn (Config configRec) =
     Config <|
         { configRec | viewFn = viewFn }
 
 
-{-| Configure the attrs to add to the component
--}
-configAttrs : (State -> List (Attribute msg)) -> Config msg -> Config msg
-configAttrs attrsFn (Config configRec) =
-    Config <|
-        { configRec | attrsFn = attrsFn }
 
-
-
----- VIEW ----
+---- VIEW ----ß
 
 
 {-| Display the component
 -}
 view : State -> Config msg -> Html msg
 view (State state) (Config configRec) =
-    div (configRec.attrsFn (State state))
-        [ dropZone state configRec
+    div []
+        [ div [] (dropZone state configRec)
         , fileInput configRec
         ]
 
 
-dropZone : StateRec -> ConfigRec msg -> Html msg
+dropZone : StateRec -> ConfigRec msg -> List (Html msg)
 dropZone state configRec =
+    configRec.viewFn (State state) (configRec.browseClickMsg configRec.inputId) (dropZoneDragAttrs state configRec)
+
+
+dropZoneDragAttrs : StateRec -> ConfigRec msg -> List (Attribute msg)
+dropZoneDragAttrs stateRec configRec =
     let
         setDragging dragging =
-            configRec.setStateMsg (State { state | dropActive = dragging })
+            configRec.setStateMsg (State { stateRec | dropActive = dragging })
     in
-    div
-        (List.concat
-            [ configRec.attrsFn (State state)
-            , Drag.onDropTarget
-                { dropEffect = Drag.CopyOnDrop
-                , onEnter = Just <| always <| setDragging True
-                , onLeave = Just <| always <| setDragging False
-                , onDrop = .dataTransfer >> .files >> configRec.uploadFilesMsg
-                , onOver = always (always configRec.noOpMsg)
-                }
-            ]
-        )
-        (configRec.viewFn (State state) (configRec.browseClickMsg configRec.inputId))
+    Drag.onDropTarget
+        { dropEffect = Drag.CopyOnDrop
+        , onEnter = Just <| always <| setDragging True
+        , onLeave = Just <| always <| setDragging False
+        , onDrop = .dataTransfer >> .files >> configRec.uploadFilesMsg
+        , onOver = always (always configRec.noOpMsg)
+        }
 
 
 fileInput : ConfigRec msg -> Html msg

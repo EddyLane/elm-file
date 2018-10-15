@@ -294,62 +294,6 @@ fileData (UploadingFile file status) =
 
 
 ---- UPDATE ----
---validateFile : ConfigRec msg -> Drag.File -> List String
---validateFile configRec file =
---    let
---        invalidSize =
---            ( file.size > configRec.maximumFileSize, "Above maximum file size" )
---
---        invalidMimeType =
---            case configRec.allowedMimeTypes of
---                Just allowed ->
---                     not (List.member file.mimeType configRec.allowedMimeTypes)
---                Nothing ->
---                    False
---
---            ( not (List.member file.mimeType configRec.allowedMimeTypes), "Invalid file type" )
---    in
---    [ validateSize configRec file
---    , invalidMimeType configRec file
---    ]
---        |> List.filterMap
---            (\( invalid, errorMessage ) ->
---                if invalid then
---                    Just errorMessage
---
---                else
---                    Nothing
---            )
-
-
-validate : ConfigRec msg -> Drag.File -> List String
-validate configRec file =
-    List.filterMap identity
-        [ validateSize configRec file
-        , validateMimeType configRec file
-        ]
-
-
-validateSize : ConfigRec msg -> Drag.File -> Maybe String
-validateSize configRec file =
-    if file.size > configRec.maximumFileSize then
-        Just "Above maximum file size"
-
-    else
-        Nothing
-
-
-validateMimeType : ConfigRec msg -> Drag.File -> Maybe String
-validateMimeType configRec file =
-    configRec.allowedMimeTypes
-        |> Maybe.andThen
-            (\allowedMimeTypes ->
-                if List.member file.mimeType allowedMimeTypes then
-                    Nothing
-
-                else
-                    Just "Invalid file type"
-            )
 
 
 {-| Start a list of files uploading. Returns tuple with state of the uploader with the new files and Cmds for ports
@@ -485,23 +429,6 @@ progress id progressFloat (State uploadsCollection) =
             uploadsCollection
 
 
-{-| Cancel an upload specified by the UploadId
-Returns a tuple with:
-
-  - The new internal state of the uploader, with the file removed
-  - Cmds to cancel both the upload and any artifacts created during the upload process
-
--}
-
-
-
---    { message : Encode.Value
---    , uploadId : Encode.Value
---    , data : Encode.Value
---    , file : Decode.Value
---    }
-
-
 cancel : Config msg -> UploadId -> State -> ( State, Cmd msg )
 cancel (Config { ports }) uploadId (State uploadsCollection) =
     ( State <| UploadId.remove uploadId uploadsCollection
@@ -511,6 +438,40 @@ cancel (Config { ports }) uploadId (State uploadsCollection) =
         , data = Encode.null
         }
     )
+
+
+
+---- VALIDATION ----
+
+
+validate : ConfigRec msg -> Drag.File -> List String
+validate configRec file =
+    List.filterMap identity
+        [ validateSize configRec file
+        , validateMimeType configRec file
+        ]
+
+
+validateSize : ConfigRec msg -> Drag.File -> Maybe String
+validateSize configRec file =
+    if file.size > configRec.maximumFileSize then
+        Just "Above maximum file size"
+
+    else
+        Nothing
+
+
+validateMimeType : ConfigRec msg -> Drag.File -> Maybe String
+validateMimeType configRec file =
+    configRec.allowedMimeTypes
+        |> Maybe.andThen
+            (\allowedMimeTypes ->
+                if List.member file.mimeType allowedMimeTypes then
+                    Nothing
+
+                else
+                    Just "Invalid file type"
+            )
 
 
 
