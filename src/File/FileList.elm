@@ -568,7 +568,7 @@ viewFailedRow (Config { cancelUploadMsg, columns, failedRowAttrs }) uploadId fil
         [ td [ class "align-center text-left" ] []
         , td [ class "align-center text-left" ] []
         , td [ class "align-center text-left" ] [ text <| Upload.fileFilename file ]
-        , td [ class "align-center text-left", colspan (List.length columns) ] []
+        , td [ class "align-center text-left", colspan (List.length columns) ] [ text (Upload.fileError file) ]
         , td [ class "align-center text-left" ] [ button [ onClick (cancelUploadMsg uploadId) ] [ text "Remove" ] ]
         ]
 

@@ -3,7 +3,7 @@ module File.Upload exposing
     , fileData, fileFilename, fileIsFailed, fileIsImage, fileProgress
     , State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploads
     , subscriptions
-    , PortCmdMsg, Ports, configPorts
+    , PortCmdMsg, Ports, configPorts, fileError
     )
 
 {-| Provides an interface to upload files to a remote destination, but requires you to fill in some blanks
@@ -240,6 +240,16 @@ fileIsFailed (UploadingFile _ uploadState) =
             False
 
 
+fileError : UploadingFile -> String
+fileError (UploadingFile _ uploadState) =
+    case uploadState of
+        Failed error ->
+            error
+
+        _ ->
+            ""
+
+
 {-| Is the uploading file an image?
 -}
 fileIsImage : UploadingFile -> Bool
@@ -283,27 +293,37 @@ fileData (UploadingFile file status) =
 encode : Config msg -> List Drag.File -> State -> ( State, Cmd msg )
 encode (Config configRec) files (State uploadsCollection) =
     let
-        ( updatedUploadCollection, insertedIds ) =
-            files
-                |> List.map
-                    (\file ->
-                        UploadingFile file
-                            (if file.size > configRec.maximumFileSize then
-                                Failed "Above maximum file size"
+        uploadingFiles =
+            List.map
+                (\file ->
+                    UploadingFile file
+                        (if file.size > configRec.maximumFileSize then
+                            Failed "Above maximum file size"
 
-                             else
-                                ReadingBase64
-                            )
-                    )
+                         else
+                            ReadingBase64
+                        )
+                )
+                files
+
+        ( updatedUploadCollection, insertedIds ) =
+            uploadingFiles
                 |> List.foldl
-                    (\file ( collection, inserted ) ->
+                    (\((UploadingFile _ status) as file) ( collection, inserted ) ->
                         let
                             ( id, newCollection ) =
                                 UploadId.insert file collection
                         in
-                        ( newCollection
-                        , id :: inserted
-                        )
+                        case status of
+                            ReadingBase64 ->
+                                ( newCollection
+                                , id :: inserted
+                                )
+
+                            _ ->
+                                ( newCollection
+                                , inserted
+                                )
                     )
                     ( uploadsCollection, [] )
     in
