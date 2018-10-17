@@ -1,6 +1,6 @@
 module File.DropZone exposing
     ( State, init, isActive, view
-    , Config, config, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
+    , Config, config, configAttrs, configBrowseFiles, configContents, configInputId, configSetState, configUploadFiles
     , configPorts, dropZoneDragAttrs, openFileBrowser, subscriptions
     )
 
@@ -20,10 +20,11 @@ to a server.
 -}
 
 import File.Upload exposing (PortCmdMsg, Ports)
-import Html exposing (..)
-import Html.Attributes exposing (..)
 import Html.Events exposing (custom, onClick)
 import Html.Events.Extra.Drag as Drag
+import Html.Styled exposing (..)
+import Html.Styled.Attributes as Attributes exposing (attribute, class, id, style, type_)
+import Html.Styled.Events exposing (on, onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 
@@ -84,7 +85,8 @@ type alias ConfigRec msg =
     , inputId : String
     , browseClickMsg : String -> msg
     , setStateMsg : State -> msg
-    , viewFn : State -> msg -> List (Attribute msg) -> List (Html msg)
+    , viewFn : State -> msg -> List (Html msg)
+    , attrsFn : State -> List (Attribute msg)
     , noOpMsg : msg
     , ports : Ports msg
     }
@@ -99,7 +101,8 @@ config noOpMsg =
         , inputId = "elm-file-uploader"
         , browseClickMsg = always noOpMsg
         , setStateMsg = always noOpMsg
-        , viewFn = always (always (always []))
+        , viewFn = always (always [])
+        , attrsFn = always []
         , noOpMsg = noOpMsg
         , ports =
             { cmd = always Cmd.none
@@ -150,44 +153,60 @@ configBrowseFiles msg (Config configRec) =
 {-| Configure how to display the contents of the DropZone. Takes a function which takes the state of the dropzone, and
 an event to open a file browser to upload more files
 -}
-configContents : (State -> msg -> List (Attribute msg) -> List (Html msg)) -> Config msg -> Config msg
+configContents : (State -> msg -> List (Html msg)) -> Config msg -> Config msg
 configContents viewFn (Config configRec) =
     Config <|
         { configRec | viewFn = viewFn }
 
 
+{-| Configure the attrs to add to the component
+-}
+configAttrs : (State -> List (Attribute msg)) -> Config msg -> Config msg
+configAttrs attrsFn (Config configRec) =
+    Config <|
+        { configRec | attrsFn = attrsFn }
 
----- VIEW ----ß
+
+
+---- VIEW ----
 
 
 {-| Display the component
 -}
 view : State -> Config msg -> Html msg
 view (State state) (Config configRec) =
-    div []
-        [ div [] (dropZone state configRec)
+    div (configRec.attrsFn (State state))
+        [ dropZone state configRec
         , fileInput configRec
         ]
 
 
-dropZone : StateRec -> ConfigRec msg -> List (Html msg)
+dropZone : StateRec -> ConfigRec msg -> Html msg
 dropZone state configRec =
-    configRec.viewFn (State state) (configRec.browseClickMsg configRec.inputId) (dropZoneDragAttrs state configRec)
+    div
+        (List.concat
+            [ configRec.attrsFn (State state)
+            , dropZoneDragAttrs (State state) (Config configRec)
+            ]
+        )
+        (configRec.viewFn (State state) (configRec.browseClickMsg configRec.inputId))
 
 
-dropZoneDragAttrs : StateRec -> ConfigRec msg -> List (Attribute msg)
-dropZoneDragAttrs stateRec configRec =
+dropZoneDragAttrs : State -> Config msg -> List (Attribute msg)
+dropZoneDragAttrs (State stateRec) (Config configRec) =
     let
         setDragging dragging =
             configRec.setStateMsg (State { stateRec | dropActive = dragging })
     in
-    Drag.onDropTarget
-        { dropEffect = Drag.CopyOnDrop
-        , onEnter = Just <| always <| setDragging True
-        , onLeave = Just <| always <| setDragging False
-        , onDrop = .dataTransfer >> .files >> configRec.uploadFilesMsg
-        , onOver = always (always configRec.noOpMsg)
-        }
+    List.map Attributes.fromUnstyled
+        (Drag.onDropTarget
+            { dropEffect = Drag.CopyOnDrop
+            , onEnter = Just <| always <| setDragging True
+            , onLeave = Just <| always <| setDragging False
+            , onDrop = .dataTransfer >> .files >> configRec.uploadFilesMsg
+            , onOver = always (always configRec.noOpMsg)
+            }
+        )
 
 
 fileInput : ConfigRec msg -> Html msg
@@ -197,7 +216,7 @@ fileInput { inputId, uploadFilesMsg, noOpMsg } =
         , attribute "multiple" ""
         , type_ "file"
         , id inputId
-        , Html.Events.on "change" (fileInputDecoder uploadFilesMsg)
+        , on "change" (fileInputDecoder uploadFilesMsg)
         ]
         []
 
