@@ -13,8 +13,9 @@ module File.Gallery exposing
 import Css exposing (..)
 import Css.Media
 import FeatherIcons
-import File.Data.UploadId exposing (UploadId)
-import File.Upload exposing (UploadingFile)
+import File.Data.Base64Encoded as Base64Encoded
+import File.Data.UploadId as UploadId exposing (UploadId)
+import File.Upload as Upload exposing (UploadingFile)
 import Html
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (class, css, href, src)
@@ -36,8 +37,8 @@ type alias ConfigRec file msg =
     { idFn : file -> String
     , nameFn : file -> String
     , contentTypeFn : file -> String
-    , thumbnailSrcFn : file -> String
     , cancelUploadMsg : UploadId -> msg
+    , thumbnailSrcFn : file -> String
     }
 
 
@@ -100,45 +101,152 @@ configCancelUploadMsg cancelUploadMsg (Config configRec) =
         { configRec | cancelUploadMsg = cancelUploadMsg }
 
 
-view : List file -> Config file msg -> Html msg
-view uploaded (Config configRec) =
-    div
-        [ css
-            [ maxWidth (px 960)
-            , margin2 (px 0) auto
-            , textAlign center
-            , paddingBottom (px 360)
-            ]
-        ]
-        (List.map (viewItem configRec) uploaded)
+view : Maybe (Html msg) -> List file -> Upload.State -> Config file msg -> Html msg
+view maybeDropZone uploaded uploading (Config configRec) =
+    let
+        dropZone =
+            maybeDropZone
+                |> Maybe.map
+                    (\html ->
+                        div
+                            [ css [ viewGalleryItemContainerStyle ] ]
+                            [ div [ css [ viewGalleryItemStyle ] ] [ html ] ]
+                    )
+                |> Maybe.withDefault (text "")
+
+        galleryItems =
+            viewItems uploaded uploading configRec
+    in
+    div [] (dropZone :: galleryItems)
 
 
-viewItem : ConfigRec file msg -> file -> Html msg
-viewItem configRec file =
-    div
-        [ css
-            [ float left
-            , position relative
-            , width (calc (pct 15) minus (px 2))
-            , paddingBottom (pct 15)
-            , margin (pct 0.83)
-            , overflow hidden
-            , hover [ boxShadow5 (px 5) (px 5) (px 5) (px 0) (rgba 0 0 0 0.25) ]
-            , borderRadius4 (pct 5) (pct 5) (pct 5) (pct 5)
-            , border3 (px 1) solid (hex "000000")
-            , overflow hidden
-            ]
+viewToolbar : Html msg
+viewToolbar =
+    div [] [ button [] [ text "Button" ] ]
+
+
+viewItems : List file -> Upload.State -> ConfigRec file msg -> List (Html msg)
+viewItems uploaded uploading configRec =
+    uploading
+        |> combineUploadedAndUploading uploaded
+        |> List.map (viewItem configRec)
+
+
+combineUploadedAndUploading : List file -> Upload.State -> List (UploadState file)
+combineUploadedAndUploading files uploadState =
+    List.concat
+        [ List.map Uploaded files
+        , uploadState
+            |> Upload.uploads
+            |> UploadId.toList
+            |> List.map (\( id, uploading ) -> Uploading id uploading)
         ]
-        [ img
-            [ src (configRec.thumbnailSrcFn file)
-            , css
-                [ position absolute
-                , left (px 0)
-                , top (px 0)
-                , width (pct 100)
-                , height (pct 100)
-                , property "object-fit" "cover"
+
+
+viewGalleryItemContainer : List (Html msg) -> Html msg
+viewGalleryItemContainer inner =
+    div [ css [ viewGalleryItemContainerStyle ] ] inner
+
+
+viewGalleryItemContainerStyle : Style
+viewGalleryItemContainerStyle =
+    Css.batch
+        [ float left
+        , position relative
+        , width (calc (pct 15) minus (px 2))
+        , paddingBottom (pct 15)
+        , margin (pct 0.83)
+        , overflow hidden
+        , hover [ boxShadow5 (px 5) (px 5) (px 5) (px 0) (rgba 0 0 0 0.25) ]
+        , borderRadius4 (pct 5) (pct 5) (pct 5) (pct 5)
+        , border3 (px 1) solid (hex "000000")
+        , overflow hidden
+        ]
+
+
+viewGalleryItemStyle : Style
+viewGalleryItemStyle =
+    Css.batch
+        [ position absolute
+        , left (px 0)
+        , top (px 0)
+        , width (pct 100)
+        , height (pct 100)
+        ]
+
+
+viewItem : ConfigRec file msg -> UploadState file -> Html msg
+viewItem configRec upload =
+    viewGalleryItemContainer
+        [ viewItemThumbnail configRec upload
+        , viewItemUploadOverlay configRec upload
+        ]
+
+
+viewItemUploadOverlay : ConfigRec file msg -> UploadState file -> Html msg
+viewItemUploadOverlay configRec uploadState =
+    case uploadState of
+        Uploaded _ ->
+            text ""
+
+        Uploading _ uploading ->
+            div
+                [ css
+                    [ position absolute
+                    , backgroundColor (hex "000000")
+                    , opacity (Css.num 0.5)
+                    , left (pct (Upload.fileProgress uploading))
+                    , zIndex (int 1)
+                    ]
                 ]
-            ]
-            []
-        ]
+                []
+
+
+viewItemThumbnail : ConfigRec file msg -> UploadState file -> Html msg
+viewItemThumbnail configRec uploadState =
+    case thumbnailSrc configRec uploadState of
+        Just thumbSrc ->
+            img
+                [ src thumbSrc
+                , css
+                    [ viewGalleryItemStyle
+                    , property "object-fit" "cover"
+                    , zIndex (int 0)
+                    ]
+                ]
+                []
+
+        Nothing ->
+            div
+                [ css [ viewGalleryItemStyle ] ]
+                [ FeatherIcons.upload
+                    |> FeatherIcons.withSizeUnit "%"
+                    |> FeatherIcons.withSize 100
+                    |> FeatherIcons.toHtml []
+                    |> fromUnstyled
+                ]
+
+
+thumbnailSrc : ConfigRec file msg -> UploadState file -> Maybe String
+thumbnailSrc configRec uploadState =
+    case ( isImage configRec uploadState, uploadState ) of
+        ( True, Uploaded file ) ->
+            Just (configRec.thumbnailSrcFn file)
+
+        ( True, Uploading _ file ) ->
+            file
+                |> Upload.fileData
+                |> Maybe.map Base64Encoded.toString
+
+        _ ->
+            Nothing
+
+
+isImage : ConfigRec file msg -> UploadState file -> Bool
+isImage configRec uploadState =
+    case uploadState of
+        Uploaded file ->
+            String.startsWith "image" (configRec.contentTypeFn file)
+
+        Uploading _ file ->
+            Upload.fileIsImage file

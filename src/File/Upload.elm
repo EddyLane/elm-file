@@ -3,7 +3,7 @@ module File.Upload exposing
     , fileData, fileFilename, fileIsFailed, fileIsImage, fileProgress
     , State, UploadingFile, cancel, encode, failure, init, success, update, upload, uploads
     , subscriptions
-    , PortCmdMsg, Ports, configAllowedMimeTypes, configPorts, fileError
+    , PortCmdMsg, Ports, configAllowedMimeTypes, configPorts, fileError, isUploading
     )
 
 {-| Provides an interface to upload files to a remote destination, but requires you to fill in some blanks
@@ -275,6 +275,16 @@ fileProgress file =
 
         _ ->
             0.0
+
+
+isUploading : UploadingFile -> Bool
+isUploading file =
+    case file of
+        UploadingFile _ (Uploading _ _) ->
+            True
+
+        _ ->
+            False
 
 
 {-| Get the base64 data for an uploading file, if ready.
