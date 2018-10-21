@@ -3,7 +3,9 @@ module File.Gallery exposing
     , PortCmdMsg
     , State
     , UploadState
+    , animate
     , config
+    , configAnimationMsg
     , configCancelUploadMsg
     , configContentTypeFn
     , configIdFn
@@ -17,6 +19,7 @@ module File.Gallery exposing
     , view
     )
 
+import Animation
 import Css exposing (..)
 import Css.Media
 import Css.Transitions exposing (easeInOut, transition)
@@ -27,7 +30,7 @@ import File.Data.UploadId as UploadId exposing (UploadId)
 import File.Upload as Upload exposing (UploadingFile)
 import Html
 import Html.Styled exposing (..)
-import Html.Styled.Attributes exposing (class, css, href, id, src)
+import Html.Styled.Attributes as Attributes exposing (class, css, href, id, src)
 import Html.Styled.Events exposing (onClick)
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
@@ -92,11 +95,16 @@ type State
 
 init : State
 init =
-    State { current = Dict.empty }
+    State
+        { current = Dict.empty
+        , animations = Dict.empty
+        }
 
 
 type alias StateRec =
-    { current : Dict String Rectangle }
+    { current : Dict String Rectangle
+    , animations : Dict String Animation.State
+    }
 
 
 type alias Rectangle =
@@ -144,6 +152,7 @@ type alias ConfigRec file msg =
     , ports : Ports msg
     , noOpMsg : msg
     , setStateMsg : State -> msg
+    , animationMsg : String -> Animation.Msg -> msg
     }
 
 
@@ -166,6 +175,7 @@ config noOpMsg =
             }
         , noOpMsg = noOpMsg
         , setStateMsg = always noOpMsg
+        , animationMsg = always (always noOpMsg)
         }
 
 
@@ -227,6 +237,25 @@ configCancelUploadMsg cancelUploadMsg (Config configRec) =
         { configRec | cancelUploadMsg = cancelUploadMsg }
 
 
+configAnimationMsg : (String -> Animation.Msg -> msg) -> Config file msg -> Config file msg
+configAnimationMsg animationMsg (Config configRec) =
+    Config <|
+        { configRec | animationMsg = animationMsg }
+
+
+
+---- ANIMATE ----
+
+
+animate : Animation.Msg -> String -> State -> State
+animate animationMsg elementId (State stateRec) =
+    State { stateRec | animations = Dict.update elementId (Maybe.map (Animation.update animationMsg)) stateRec.animations }
+
+
+
+---- VIEW ----
+
+
 view : Maybe (Html msg) -> State -> List file -> Upload.State -> Config file msg -> Html msg
 view maybeDropZone (State stateRec) uploaded uploading (Config configRec) =
     let
@@ -259,6 +288,10 @@ view maybeDropZone (State stateRec) uploaded uploading (Config configRec) =
         ]
 
 
+
+--""
+
+
 viewGallery : Html msg -> List file -> Upload.State -> ConfigRec file msg -> Html msg
 viewGallery dropZone uploaded uploading configRec =
     let
@@ -273,18 +306,29 @@ viewHiddenGallery dropZone stateRec =
     let
         galleryItems =
             stateRec.current
-                |> Dict.values
+                |> Dict.toList
+                |> List.filterMap
+                    (\( elementId, c ) ->
+                        Dict.get elementId stateRec.animations
+                            |> Maybe.map (\anim -> ( elementId, c, anim ))
+                    )
                 |> List.map
-                    (\c ->
+                    (\( elementId, c, anim ) ->
                         div
-                            [ css
-                                [ viewGalleryItemContainerStyle
-                                , border3 (px 1) dashed (hex "000")
+                            (List.concat
+                                [ [ id elementId
+                                  , css
+                                        [ position absolute
+                                        , border3 (px 1) dashed (hex "000")
+                                        , backgroundColor (hex "fff")
+                                        ]
+                                  ]
+                                , List.map Attributes.fromUnstyled (Animation.render anim)
                                 ]
-                            ]
+                            )
                             [ div
                                 [ css [ viewGalleryItemStyle ] ]
-                                [ text "hi" ]
+                                [ text elementId ]
                             ]
                     )
     in
@@ -330,7 +374,10 @@ viewGalleryItemContainer : String -> List (Html msg) -> Html msg
 viewGalleryItemContainer elementId inner =
     div
         [ id elementId
-        , css [ viewGalleryItemContainerStyle ]
+        , css
+            [ viewGalleryItemContainerStyle
+            , visibility hidden
+            ]
         ]
         inner
 
@@ -340,7 +387,9 @@ viewGalleryItemContainerStyle =
     let
         media { maxWidth, itemWidth, itemMargin } =
             Css.Media.withMedia
-                [ Css.Media.only Css.Media.screen [ Css.Media.maxWidth maxWidth ] ]
+                [ Css.Media.only Css.Media.screen
+                    [ Css.Media.maxWidth maxWidth ]
+                ]
                 [ width (calc itemWidth minus (px 2))
                 , paddingBottom itemWidth
                 , margin itemMargin
@@ -490,11 +539,20 @@ isImage configRec uploadState =
 -}
 subscriptions : Config file msg -> State -> Sub msg
 subscriptions ((Config confRec) as conf) (State stateRec) =
-    confRec.ports.sub
-        (decodePortMsg
-            >> Maybe.map (dispatchSub confRec stateRec)
-            >> Maybe.withDefault confRec.noOpMsg
-        )
+    Sub.batch
+        [ confRec.ports.sub
+            (decodePortMsg
+                >> Maybe.map (dispatchSub confRec stateRec)
+                >> Maybe.withDefault confRec.noOpMsg
+            )
+        , stateRec.animations
+            |> Dict.toList
+            |> List.map
+                (\( elementId, animation ) ->
+                    Animation.subscription (confRec.animationMsg elementId) [ animation ]
+                )
+            |> Sub.batch
+        ]
 
 
 dispatchSub : ConfigRec file msg -> StateRec -> PortSubMsg -> msg
@@ -531,8 +589,43 @@ subBoundedRects confRec stateRec portsMsg =
                             current =
                                 resultList
                                     |> List.foldl (\{ inputId, rect } acc -> Dict.insert inputId rect acc) stateRec.current
+
+                            animations =
+                                resultList
+                                    |> List.foldl
+                                        (\{ inputId, rect } acc ->
+                                            let
+                                                style =
+                                                    [ Animation.left (Animation.px rect.left)
+                                                    , Animation.top (Animation.px rect.top)
+                                                    , Animation.x rect.x
+                                                    , Animation.y rect.y
+                                                    , Animation.bottom (Animation.px rect.bottom)
+                                                    , Animation.right (Animation.px rect.right)
+                                                    , Animation.width (Animation.px rect.width)
+                                                    , Animation.height (Animation.px rect.height)
+                                                    ]
+                                            in
+                                            Dict.update inputId
+                                                (\maybeAnim ->
+                                                    case maybeAnim of
+                                                        Just anim ->
+                                                            Just <| Animation.interrupt [ Animation.to style ] anim
+
+                                                        Nothing ->
+                                                            Just <| Animation.style style
+                                                )
+                                                acc
+                                        )
+                                        stateRec.animations
                         in
-                        Ok (confRec.setStateMsg (State { stateRec | current = current }))
+                        { stateRec
+                            | current = current
+                            , animations = animations
+                        }
+                            |> State
+                            |> confRec.setStateMsg
+                            |> Ok
                     )
                 |> Result.withDefault confRec.noOpMsg
 
