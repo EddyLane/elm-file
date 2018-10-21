@@ -12,6 +12,7 @@ module File.Gallery exposing
 
 import Css exposing (..)
 import Css.Media
+import Css.Transitions exposing (easeInOut, transition)
 import FeatherIcons
 import File.Data.Base64Encoded as Base64Encoded
 import File.Data.UploadId as UploadId exposing (UploadId)
@@ -122,7 +123,11 @@ view maybeDropZone uploaded uploading (Config configRec) =
 
 viewToolbar : Html msg
 viewToolbar =
-    div [] [ button [] [ text "Button" ] ]
+    div []
+        [ button
+            [ css [ border (px 0) ] ]
+            [ text "Button" ]
+        ]
 
 
 viewItems : List file -> Upload.State -> ConfigRec file msg -> List (Html msg)
@@ -150,6 +155,15 @@ viewGalleryItemContainer inner =
 
 viewGalleryItemContainerStyle : Style
 viewGalleryItemContainerStyle =
+    let
+        media { maxWidth, itemWidth, itemMargin } =
+            Css.Media.withMedia
+                [ Css.Media.only Css.Media.screen [ Css.Media.maxWidth maxWidth ] ]
+                [ width (calc itemWidth minus (px 2))
+                , paddingBottom itemWidth
+                , margin itemMargin
+                ]
+    in
     Css.batch
         [ float left
         , position relative
@@ -157,9 +171,20 @@ viewGalleryItemContainerStyle =
         , paddingBottom (pct 15)
         , margin (pct 0.83)
         , overflow hidden
-        , hover [ boxShadow5 (px 5) (px 5) (px 5) (px 0) (rgba 0 0 0 0.25) ]
+        , hover
+            [ boxShadow5 (px 5) (px 5) (px 5) (px 0) (rgba 0 0 0 0.25)
+            , border3 (px 1) solid (rgb 249 229 89)
+            ]
+        , transition
+            [ Css.Transitions.boxShadow 500
+            , Css.Transitions.border 200
+            ]
+        , media { maxWidth = px 992, itemWidth = pct 22, itemMargin = pct 1.5 }
+        , media { maxWidth = px 720, itemWidth = pct 29, itemMargin = pct 2.16 }
+        , media { maxWidth = px 470, itemWidth = pct 44, itemMargin = pct 3.0 }
         , borderRadius4 (pct 5) (pct 5) (pct 5) (pct 5)
-        , border3 (px 1) solid (hex "000000")
+        , border3 (px 1) solid (hex "fff")
+        , color (hex "fff")
         , overflow hidden
         ]
 
@@ -187,7 +212,16 @@ viewItemUploadOverlay : ConfigRec file msg -> UploadState file -> Html msg
 viewItemUploadOverlay configRec uploadState =
     case uploadState of
         Uploaded _ ->
-            text ""
+            div
+                [ css
+                    [ position absolute
+                    , backgroundColor (hex "000000")
+                    , opacity (Css.num 0.5)
+                    , left (px 0)
+                    , zIndex (int 1)
+                    ]
+                ]
+                []
 
         Uploading _ uploading ->
             div
@@ -218,13 +252,25 @@ viewItemThumbnail configRec uploadState =
 
         Nothing ->
             div
-                [ css [ viewGalleryItemStyle ] ]
-                [ FeatherIcons.upload
+                [ css [ viewGalleryItemStyle ]
+                ]
+                [ FeatherIcons.fileText
                     |> FeatherIcons.withSizeUnit "%"
-                    |> FeatherIcons.withSize 100
+                    |> FeatherIcons.withSize 50
                     |> FeatherIcons.toHtml []
                     |> fromUnstyled
+                , text (fileName configRec uploadState)
                 ]
+
+
+fileName : ConfigRec file msg -> UploadState file -> String
+fileName configRec uploadState =
+    case uploadState of
+        Uploading _ file ->
+            Upload.fileFilename file
+
+        Uploaded file ->
+            configRec.nameFn file
 
 
 thumbnailSrc : ConfigRec file msg -> UploadState file -> Maybe String
